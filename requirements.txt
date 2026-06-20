@@ -1,0 +1,19 @@
+# BrowseCheck — Python runtime security layer for AI browser agents
+# Install everything:  pip install -r requirements.txt
+
+# --- CORE (server + dashboard + scorecard) — all P2 needs to run the demo ---
+# The server does NOT import stagehand/anthropic at load time, so if the agent
+# SDKs below are slow/awkward to install you can run the synthetic demo with
+# just these:  pip install fastapi "uvicorn[standard]" "pydantic>=2" python-dotenv
+fastapi              # dashboard backend + SSE
+uvicorn[standard]    # ASGI server
+pydantic>=2          # contracts (frozen models)
+python-dotenv        # .env loading
+
+# --- AGENT (P1: live Browserbase traversal + hero hooks) ---
+stagehand            # Stagehand Python SDK (Browserbase agent: observe/act)
+anthropic            # Claude — powers the two hero hooks
+httpx                # Browserbase REST calls (live-view URL, session info)
+
+# --- OBSERVABILITY (optional; activates only when SENTRY_DSN is set) ---
+sentry-sdk
