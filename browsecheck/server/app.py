@@ -27,6 +27,7 @@ app = FastAPI(title="BrowseCheck")
 _settings = get_settings()
 _DASHBOARD = Path(__file__).resolve().parents[2] / "dashboard" / "index.html"
 _last_scorecard: dict = {}
+_tasks = set()  # ponytail: keep refs so tasks don't get GC'd
 
 
 @app.get("/")
@@ -55,7 +56,9 @@ async def events() -> StreamingResponse:
 
 @app.post("/run/synthetic")
 async def run_synthetic_demo() -> JSONResponse:
-    asyncio.create_task(run_synthetic())
+    task = asyncio.create_task(run_synthetic())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
     return JSONResponse({"status": "started", "mode": "synthetic"})
 
 
