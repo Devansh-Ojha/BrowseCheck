@@ -42,7 +42,14 @@ _RECORDED_SCORECARD: dict = {
 
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(_DASHBOARD)
+    return FileResponse(
+        _DASHBOARD,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.get("/fixtures/{name}", response_model=None)
@@ -58,7 +65,14 @@ async def fixture(name: str) -> Response:
 @app.get("/live-view")
 async def live_view() -> JSONResponse:
     """Browserbase live-view URL for the dashboard iframe (empty in LOCAL mode)."""
-    return JSONResponse(_live_view)
+    return JSONResponse(
+        _live_view,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @app.get("/events")
@@ -121,7 +135,7 @@ async def debug_suspicious() -> JSONResponse:
 
 
 @app.post("/run")
-async def run(enforce: str = "on") -> JSONResponse:
+async def run(enforce: str = "on", target: str = "all") -> JSONResponse:
     """Real traversal via the Claude tool-use control loop (LOCAL or BROWSERBASE).
 
     Runs in the background and streams SecurityEvents to the dashboard over SSE.
@@ -140,7 +154,7 @@ async def run(enforce: str = "on") -> JSONResponse:
             from ..browser.session import BrowserSession
             from ..controlloop.loop import run_traversal
             from ..hooks.factory import build_registry
-            from ..tasks.demo_task import USER_TASK, demo_sites
+            from ..tasks.demo_task import USER_TASK, demo_sites, malicious_sites
 
             protected = enforce == "on"
             session = BrowserSession(expose_hidden_surfaces=not protected)
@@ -151,11 +165,14 @@ async def run(enforce: str = "on") -> JSONResponse:
             try:
                 await run_traversal(
                     session, build_registry(),
-                    user_task=USER_TASK, sites=demo_sites(),
+                    user_task=USER_TASK,
+                    sites=malicious_sites() if target == "malicious" else demo_sites(),
                     enforce=protected, run_mode=run_mode,
                     session_id=session_id,
                 )
             finally:
+                if _settings.is_browserbase:
+                    await asyncio.sleep(15)
                 await session.close()
         except Exception as exc:  # noqa: BLE001 — show the failure on the feed
             await event_bus.publish(SecurityEvent(
@@ -164,8 +181,10 @@ async def run(enforce: str = "on") -> JSONResponse:
                 reason=f"run failed: {exc}",
             ))
 
-    asyncio.create_task(_run())
-    return JSONResponse({"status": "started", "mode": "live", "enforce": enforce})
+    task = asyncio.create_task(_run())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return JSONResponse({"status": "started", "mode": "live", "enforce": enforce, "target": target})
 
 
 @app.get("/scorecard")
