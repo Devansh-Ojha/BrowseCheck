@@ -179,3 +179,15 @@ async def run_scorecard_endpoint() -> JSONResponse:
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
     return JSONResponse({"status": "started", "hint": "poll GET /scorecard for result"})
+
+
+@app.get("/metrics")
+async def get_metrics() -> JSONResponse:
+    """Per-hook average latency and call count for the current session."""
+    return JSONResponse(memory_sink.metrics())
+
+
+@app.get("/report")
+async def get_report() -> JSONResponse:
+    """Full event log for the current session as JSON — download for audit."""
+    return JSONResponse([e.model_dump() for e in memory_sink.events])
