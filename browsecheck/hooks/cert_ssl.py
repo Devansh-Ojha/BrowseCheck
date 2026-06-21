@@ -32,7 +32,10 @@ class CertSslHook(SecurityHook):
         with _Timer() as t:
             host = ctx.page.domain or _host(ctx.page.url)
 
-            if not ctx.page.url.startswith("https://"):
+            scheme = urlparse(ctx.page.url).scheme
+            if scheme in ("file", "data"):  # local fixtures / tests
+                r = self._allow("local URL, no TLS required", host=host)
+            elif not ctx.page.url.startswith("https://"):
                 r = self._block("page is not served over HTTPS",
                                 severity=Severity.MEDIUM, host=host)
             else:
