@@ -32,7 +32,9 @@ class CertSslHook(SecurityHook):
         with _Timer() as t:
             host = ctx.page.domain or _host(ctx.page.url)
 
-            if not ctx.page.url.startswith("https://"):
+            if ctx.page.url.startswith("file://") or host in {"", "localhost", "127.0.0.1"}:
+                r = self._allow("local/dev context — cert not enforced", host=host)
+            elif not ctx.page.url.startswith("https://"):
                 r = self._block("page is not served over HTTPS",
                                 severity=Severity.MEDIUM, host=host)
             else:

@@ -20,9 +20,9 @@ no browser, LLM, or red-team URL required — so the UI/scorecard are demoable n
 browsecheck/
   contracts.py      FROZEN hook + event contracts (shared)
   config.py         env / LOCAL<->BROWSERBASE seam
-  llm/provider.py   Anthropic wrapper (hero hooks)            [P1]
-  browser/          Stagehand session + live-view URL          [P1]
-  controlloop/      observe -> hooks -> act -> log              [P1]
+  llm/provider.py   Anthropic wrapper: classify() + respond()  [P1]
+  browser/          Playwright/CDP executor + live-view URL     [P1]
+  controlloop/      Claude tool-use -> hooks -> act -> log       [P1]
   hooks/            base, registry, factory (shared);
                       prompt_injection, intent_drift  HERO      [P1]
                       download_inspect, credential_phish, cert_ssl [P2]

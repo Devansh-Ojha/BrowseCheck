@@ -22,6 +22,12 @@ class Settings:
         self.anthropic_model: str = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
         self.sentry_dsn: str = os.getenv("SENTRY_DSN", "")
         self.port: int = int(os.getenv("PORT", "8000"))
+        # Demo: the poisoned page the cloud browser must be able to REACH.
+        # REDTEAM_URL = the red team's hosted portal (preferred). FIXTURE_BASE_URL
+        # = a public base (e.g. a tunnel to this server) used to serve our own
+        # tests/fixtures when no red-team URL exists yet.
+        self.redteam_url: str = os.getenv("REDTEAM_URL", "")
+        self.fixture_base_url: str = os.getenv("FIXTURE_BASE_URL", "")
 
     @property
     def is_browserbase(self) -> bool:
