@@ -45,6 +45,7 @@ EventKind = Literal[
     "site-complete",   # finished a site
     "run-complete",    # finished the traversal
     "error",           # something went wrong
+    "agent-thinking",  # agent's intermediate reasoning text (display-only)
 ]
 
 RunMode = Literal["hooks-on", "hooks-off"]
@@ -143,6 +144,7 @@ class SecurityEvent(BaseModel):
     reason: Optional[str] = None
     evidence: dict[str, Any] = Field(default_factory=dict)
     latency_ms: Optional[int] = None
+    thinking: Optional[str] = None  # populated for agent-thinking events
 
     @classmethod
     def from_hook_result(

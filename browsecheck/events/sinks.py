@@ -54,6 +54,18 @@ class MemorySink(EventSink):
             for mode, d in out.items()
         }
 
+    def metrics(self) -> dict:
+        """Per-hook average latency and call count across all events."""
+        from collections import defaultdict
+        totals: dict[str, list[int]] = defaultdict(list)
+        for e in self.events:
+            if e.hook and e.latency_ms is not None:
+                totals[e.hook].append(e.latency_ms)
+        return {
+            hook: {"calls": len(ms), "avg_ms": round(sum(ms) / len(ms))}
+            for hook, ms in totals.items()
+        }
+
 
 class SSESink(EventSink):
     """Fans events out to all connected dashboard browsers via per-connection

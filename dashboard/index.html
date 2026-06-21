@@ -26,7 +26,10 @@
       <div class="hidden items-center gap-7 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500 md:flex">
         <span>Simple demo</span><span>Two paths</span>
       </div>
-      <div id="connectionState" class="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">SSE connected</div>
+      <div class="flex items-center gap-2">
+        <div id="runningBadge" class="hidden animate-pulse rounded-full border border-amber-400/30 bg-amber-400/15 px-3 py-1 text-xs font-medium text-amber-200">RUNNING</div>
+        <div id="connectionState" class="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">SSE connected</div>
+      </div>
     </nav>
 
     <section id="modeBanner" class="mb-8 rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
@@ -136,14 +139,52 @@
       </div>
     </section>
 
-    <section id="resultsBottom" class="mt-4 hidden">
-      <div class="rounded-[1.5rem] border border-white/10 bg-neutral-950/70 p-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
-        <div class="mb-3">
-          <h2 class="text-sm font-semibold uppercase tracking-[0.22em] text-neutral-500">Step-by-step trace</h2>
+    <section id="thinkingSection" class="mt-4 hidden rounded-[1.5rem] border border-white/10 bg-neutral-950/70 p-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
+      <div class="mb-3 flex items-center gap-2">
+        <h2 class="text-sm font-semibold uppercase tracking-[0.22em] text-neutral-500">Agent thinking</h2>
+        <div class="flex h-2 w-2 items-center justify-center rounded-full">
+          <div id="thinkingPulse" class="h-2 w-2 rounded-full bg-purple-400 animate-pulse"></div>
         </div>
-        <div id="feed" class="max-h-80 space-y-2 overflow-y-auto pr-2 font-mono text-xs"></div>
+      </div>
+      <div id="thinkingPanel" class="max-h-48 overflow-y-auto rounded-xl border border-white/10 bg-black/30 p-4 font-mono text-sm leading-6 text-purple-200"></div>
+    </section>
+
+    <section id="resultsBottom" class="mt-4 hidden">
+      <div class="grid gap-4 lg:grid-cols-[1.4fr_.6fr]">
+        <div class="rounded-[1.5rem] border border-white/10 bg-neutral-950/70 p-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
+          <div class="mb-3 flex items-center justify-between">
+            <h2 class="text-sm font-semibold uppercase tracking-[0.22em] text-neutral-500">Step-by-step trace</h2>
+            <div class="flex items-center gap-3">
+              <div class="flex gap-1 text-xs">
+                <button onclick="setFeedFilter('all')" id="filterAll" class="rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-neutral-200">All</button>
+                <button onclick="setFeedFilter('hooks-on')" id="filterOn" class="rounded-lg border border-white/10 px-2 py-1 text-neutral-500 hover:text-neutral-200">Protected</button>
+                <button onclick="setFeedFilter('hooks-off')" id="filterOff" class="rounded-lg border border-white/10 px-2 py-1 text-neutral-500 hover:text-neutral-200">Naive</button>
+              </div>
+              <button onclick="downloadReport()" class="text-xs text-neutral-500 hover:text-neutral-200">download report</button>
+            </div>
+          </div>
+          <div id="feed" class="max-h-80 space-y-2 overflow-y-auto pr-2 font-mono text-xs"></div>
+        </div>
+        <div class="rounded-[1.5rem] border border-white/10 bg-neutral-950/70 p-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
+          <h2 class="text-sm font-semibold uppercase tracking-[0.22em] text-neutral-500">Hook latency</h2>
+          <div id="metrics" class="mt-3 space-y-3 text-xs"></div>
+        </div>
       </div>
     </section>
+
+  <!-- Warning overlay — hooks-off block (threat got through) -->
+  <div id="warningOverlay" class="fixed inset-0 hidden items-center justify-center bg-black/70 p-6 backdrop-blur-md">
+    <div class="max-w-lg rounded-[2rem] border border-amber-300/20 bg-gradient-to-br from-amber-600 to-amber-950 p-8 text-white shadow-2xl">
+      <div class="text-4xl font-semibold tracking-[-0.05em]">UNPROTECTED</div>
+      <div class="mt-2 text-lg font-semibold text-amber-100">Threat got through</div>
+      <div id="warningReason" class="mt-2 leading-7 text-amber-50/90"></div>
+      <div id="warningEvidence" class="mt-4 hidden rounded-2xl border border-white/15 bg-black/30 p-4 text-left">
+        <div class="text-[11px] uppercase tracking-[0.22em] text-amber-100/70">Payload</div>
+        <pre id="warningText" class="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words text-xs text-amber-50"></pre>
+      </div>
+      <button onclick="hideWarning()" class="mt-5 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-50">Dismiss</button>
+    </div>
+  </div>
   </main>
 
 <script>
@@ -154,6 +195,9 @@ let currentMeta = null;
 let liveViewTimer = null;
 let liveShown = false;
 const seenSites = new Map();
+let feedFilter = 'all';
+const feedEvents = [];
+let warnedThisRun = false;
 
 function byId(id){ return document.getElementById(id); }
 function countMode(mode){ return Object.values(tallies[mode] || {}).reduce((a,b)=>a+b,0); }
@@ -241,6 +285,10 @@ function setModeState(title, phase, tone){
   byId('phasePill').textContent = phase;
 }
 
+function setButtonsDisabled(disabled){
+  document.querySelectorAll('[data-run-url]').forEach((btn)=>{ btn.disabled = disabled; });
+}
+
 function setActiveButton(url){
   document.querySelectorAll('[data-run-url]').forEach((btn)=>btn.setAttribute('aria-pressed', 'false'));
   const active = document.querySelector(`[data-run-url="${url}"]`);
@@ -288,7 +336,10 @@ function resetRun(label, url){
   tallies['hooks-off'] = {};
   tallies['hooks-on'] = {};
   seenSites.clear();
+  feedEvents.length = 0;
+  warnedThisRun = false;
   byId('feed').innerHTML = '';
+  byId('thinkingPanel').innerHTML = '';
   byId('siteTimeline').innerHTML = '';
   byId('tally').innerHTML = '<div class="text-neutral-500">No threats recorded yet.</div>';
   byId('throughTotal').textContent = '0';
@@ -430,10 +481,15 @@ function actionVerb(ev){
   return {tag:(ev.kind || '').toUpperCase(), text:r};
 }
 
-function addFeed(ev){
+function shouldShowFeed(ev){
   // Naive run: hide BrowseCheck's shadow detections AND the redundant 'observe'
   // (it duplicates the executed 'act'); show only the agent's real actions.
-  if(ev.run_mode === 'hooks-off' && (ev.kind === 'hook-pass' || ev.kind === 'hook-block' || ev.kind === 'observe')) return;
+  if(ev.run_mode === 'hooks-off' && (ev.kind === 'hook-pass' || ev.kind === 'hook-block' || ev.kind === 'observe')) return false;
+  if(feedFilter !== 'all' && ev.run_mode !== feedFilter) return false;
+  return true;
+}
+
+function makeFeedRow(ev){
   const {tag, text} = actionVerb(ev);
   let tone = 'border-white/10 bg-white/[0.03] text-neutral-300';
   if(ev.kind === 'hook-pass') tone = 'border-emerald-300/15 bg-emerald-300/[0.05] text-emerald-200';
@@ -452,7 +508,34 @@ function addFeed(ev){
   txtEl.className = 'min-w-0 break-words leading-5';
   txtEl.textContent = text;
   row.append(tEl, tagEl, txtEl);
-  byId('feed').prepend(row);
+  if(ev.latency_ms != null){
+    const latEl = document.createElement('span');
+    latEl.className = 'ml-auto shrink-0 tabular-nums text-[10px] leading-5 text-neutral-500';
+    latEl.textContent = `${ev.latency_ms}ms`;
+    row.append(latEl);
+  }
+  return row;
+}
+
+function addFeed(ev){
+  feedEvents.unshift(ev);
+  if(!shouldShowFeed(ev)) return;
+  byId('feed').prepend(makeFeedRow(ev));
+}
+
+function setFeedFilter(f){
+  feedFilter = f;
+  ['all','on','off'].forEach(k => {
+    const btn = byId('filter' + k.charAt(0).toUpperCase() + k.slice(1));
+    if(!btn) return;
+    const active = (f === 'all' && k === 'all') || f === 'hooks-' + k;
+    btn.className = active
+      ? 'rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-neutral-200'
+      : 'rounded-lg border border-white/10 px-2 py-1 text-neutral-500 hover:text-neutral-200';
+  });
+  byId('feed').innerHTML = '';
+  // feedEvents is newest-first; append in order so the newest row stays on top.
+  feedEvents.forEach(ev => { if(shouldShowFeed(ev)) byId('feed').appendChild(makeFeedRow(ev)); });
 }
 
 function ledgerLabel(mode, cat){
@@ -492,6 +575,15 @@ function handle(ev){
   if(ev.kind === 'navigate'){
     upsertSite(ev.site, 'active');
     byId('browserStatus').textContent = ev.reason || `Navigated to ${ev.site?.domain || ev.site?.url || 'site'}`;
+    byId('thinkingSection').classList.remove('hidden');
+  }
+  if(ev.kind === 'agent-thinking'){
+    const tp = byId('thinkingPanel');
+    const line = document.createElement('div');
+    line.className = 'mb-2';
+    line.textContent = ev.thinking || '';
+    tp.appendChild(line);
+    tp.scrollTop = tp.scrollHeight;
   }
   if(ev.kind === 'hook-pass' && ev.run_mode !== 'hooks-off'){
     upsertSite(ev.site, 'pass');
@@ -505,6 +597,7 @@ function handle(ev){
       renderTally();
       setVerdict('Naive agent executed an injected action', reason, 'amber');
       upsertSite(ev.site, 'through');
+      if(!warnedThisRun){ showWarning(reason, ev.evidence); warnedThisRun = true; }
     }
   }
   if(ev.kind === 'hook-block' && ev.run_mode !== 'hooks-off'){
@@ -559,6 +652,72 @@ function handle(ev){
     setTimeout(()=>{ if(!activeRun) closeLiveView('Session ended', 'The Browserbase session has closed.'); }, 30000);
   }
 }
+
+function showWarning(reason, evidence){
+  byId('warningReason').textContent = reason || '';
+  const vt = evidence?.vulnerable_text || evidence?.decoded_payload || '';
+  const wrap = byId('warningEvidence');
+  if(vt){
+    byId('warningText').textContent = vt;
+    wrap.classList.remove('hidden');
+  } else {
+    wrap.classList.add('hidden');
+  }
+  byId('warningOverlay').classList.remove('hidden');
+  byId('warningOverlay').classList.add('flex');
+  setTimeout(() => hideWarning(), 6000);
+}
+
+function hideWarning(){
+  byId('warningOverlay').classList.add('hidden');
+  byId('warningOverlay').classList.remove('flex');
+}
+
+async function loadStatus(){
+  try{
+    const r = await fetch('/status');
+    const d = await r.json();
+    const badge = byId('runningBadge');
+    if(d.active){
+      badge.classList.remove('hidden');
+      setButtonsDisabled(true);
+    } else {
+      badge.classList.add('hidden');
+      setButtonsDisabled(false);
+    }
+  }catch(e){}
+}
+
+async function loadMetrics(){
+  try{
+    const r = await fetch('/metrics');
+    const d = await r.json();
+    const el = byId('metrics');
+    const entries = Object.entries(d);
+    if(!entries.length){ el.innerHTML = '<div class="text-neutral-600">No hook calls yet.</div>'; return; }
+    const maxMs = Math.max(...entries.map(([,v])=>v.avg_ms), 1);
+    el.innerHTML = entries.map(([hook, {calls, avg_ms}])=>{
+      const pct = Math.round((avg_ms / maxMs) * 100);
+      const color = avg_ms < 10 ? 'bg-emerald-400' : avg_ms < 200 ? 'bg-amber-400' : 'bg-rose-400';
+      return `<div><div class="flex justify-between mb-1"><span class="text-neutral-300">${hook}</span><span class="text-neutral-500">${avg_ms}ms avg · ${calls} calls</span></div><div class="h-1.5 rounded-full bg-white/10"><div class="${color} h-1.5 rounded-full" style="width:${pct}%"></div></div></div>`;
+    }).join('');
+  }catch(e){}
+}
+
+async function downloadReport(){
+  try{
+    const r = await fetch('/report');
+    const d = await r.json();
+    const blob = new Blob([JSON.stringify(d, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `browsecheck-report-${Date.now()}.json`;
+    a.click();
+  }catch(e){ console.error(e); }
+}
+
+setInterval(loadStatus, 2000); loadStatus();
+setInterval(loadMetrics, 3000); loadMetrics();
 
 const es = new EventSource('/events');
 es.onmessage = (m)=>{ try{ handle(JSON.parse(m.data)); }catch(e){ console.error(e); } };
