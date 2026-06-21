@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from ..config import get_settings
-from ..demo.synthetic import run_synthetic
+from ..demo.synthetic import run_debug_normal, run_debug_suspicious, run_synthetic
 from ..events.bus import memory_sink, sse_sink
 
 app = FastAPI(title="BrowseCheck")
@@ -81,6 +81,22 @@ async def run_synthetic_demo() -> JSONResponse:
     return JSONResponse({"status": "started", "mode": "synthetic"})
 
 
+@app.post("/debug/normal")
+async def debug_normal() -> JSONResponse:
+    task = asyncio.create_task(run_debug_normal())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return JSONResponse({"status": "started", "mode": "debug-normal"})
+
+
+@app.post("/debug/suspicious")
+async def debug_suspicious() -> JSONResponse:
+    task = asyncio.create_task(run_debug_suspicious())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return JSONResponse({"status": "started", "mode": "debug-suspicious"})
+
+
 @app.post("/run")
 async def run(enforce: str = "on") -> JSONResponse:
     """Real traversal via the Claude tool-use control loop (LOCAL or BROWSERBASE).
@@ -100,21 +116,27 @@ async def run(enforce: str = "on") -> JSONResponse:
         try:
             from ..browser.session import BrowserSession
             from ..controlloop.loop import run_traversal
+            from ..demo.naive import run_naive_demo
             from ..hooks.factory import build_registry
             from ..tasks.demo_task import USER_TASK, demo_sites
 
-            session = BrowserSession()
+            protected = enforce == "on"
+            session = BrowserSession(expose_hidden_surfaces=not protected)
             await session.start()
             if _settings.is_browserbase:
                 from ..browser.replay import live_view_url
                 _live_view["url"] = await live_view_url(session.session_id) or ""
             try:
-                await run_traversal(
-                    session, build_registry(),
-                    user_task=USER_TASK, sites=demo_sites(),
-                    enforce=(enforce == "on"), run_mode=run_mode,
-                    session_id=session_id,
-                )
+                if protected:
+                    await run_traversal(
+                        session, build_registry(),
+                        user_task=USER_TASK, sites=demo_sites(),
+                        enforce=True, run_mode=run_mode,
+                        session_id=session_id,
+                        agent_profile="protected",
+                    )
+                else:
+                    await run_naive_demo(session, demo_sites(), session_id=session_id)
             finally:
                 await session.close()
         except Exception as exc:  # noqa: BLE001 — show the failure on the feed

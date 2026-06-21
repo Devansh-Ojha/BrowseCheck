@@ -14,7 +14,7 @@ thus the set of things we must gate — is fixed and inspectable.
 from __future__ import annotations
 
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -29,6 +29,15 @@ def _domain(url: str) -> str:
         return (urlparse(url).hostname or "").lower()
     except Exception:  # noqa: BLE001
         return ""
+
+
+def _resolve_url(url: str, base: str) -> str:
+    if urlparse(url).scheme:
+        return url
+    parsed_base = urlparse(base or "")
+    if parsed_base.scheme in {"http", "https", "file"}:
+        return urljoin(base, url)
+    return url
 
 
 # The fixed action surface handed to Claude. `finish` is the agent's message to
@@ -85,8 +94,9 @@ BROWSER_TOOLS: list[dict[str, Any]] = [
 class BrowserSession:
     """Playwright/CDP executor. SDK-agnostic to the rest of the app."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(self, settings: Settings | None = None, expose_hidden_surfaces: bool = False) -> None:
         self.settings = settings or get_settings()
+        self.expose_hidden_surfaces = expose_hidden_surfaces
         self._pw = None
         self._browser = None
         self._context = None
@@ -94,7 +104,14 @@ class BrowserSession:
         self.session_id: str = ""
 
     def tool_schemas(self) -> list[dict[str, Any]]:
-        return BROWSER_TOOLS
+        if not self.expose_hidden_surfaces:
+            return BROWSER_TOOLS
+        schemas = [dict(tool) for tool in BROWSER_TOOLS]
+        schemas[1] = {
+            **schemas[1],
+            "description": "Return visible text plus accessibility and DOM text available to a naive browser agent so you can decide what to do next.",
+        }
+        return schemas
 
     async def start(self) -> None:
         """Connect to Browserbase over CDP (demo) or launch local Chromium (dev)."""
@@ -149,7 +166,19 @@ class BrowserSession:
             return await self.goto(args.get("url", ""))
         if name == "read_page":
             snap = await self.snapshot()
-            return snap.rendered_text[:6000] or "(page has no visible text)"
+            rendered = snap.rendered_text[:6000] or "(page has no visible text)"
+            if not self.expose_hidden_surfaces:
+                return rendered
+            from ..hooks._injection_surfaces import extract_injection_surfaces
+
+            surfaces = extract_injection_surfaces(snap.raw_html)
+            if not surfaces:
+                return rendered
+            dom_text = "\n".join(
+                f"- {surface.get('element')}: {surface.get('text')}"
+                for surface in surfaces[:12]
+            )
+            return f"{rendered}\n\nDOM/accessibility text available to the agent:\n{dom_text}"[:10000]
         if name == "click":
             return await self._click(args.get("text") or args.get("selector") or "")
         if name == "fill":
@@ -161,7 +190,8 @@ class BrowserSession:
     async def goto(self, url: str) -> str:
         if not url:
             return "navigate: missing url"
-        await self.page.goto(url, wait_until="domcontentloaded")
+        target = _resolve_url(url, self.page.url if self.page else "")
+        await self.page.goto(target, wait_until="domcontentloaded")
         return f"navigated to {self.page.url}"
 
     async def _click(self, target: str) -> str:
