@@ -26,7 +26,10 @@
       <div class="hidden items-center gap-7 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500 md:flex">
         <span>Demo</span><span>Hooks</span><span>Live trace</span>
       </div>
-      <div id="connectionState" class="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">SSE connected</div>
+      <div class="flex items-center gap-2">
+        <div id="runningBadge" class="hidden animate-pulse rounded-full border border-amber-400/30 bg-amber-400/15 px-3 py-1 text-xs font-medium text-amber-200">RUNNING</div>
+        <div id="connectionState" class="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-200">SSE connected</div>
+      </div>
     </nav>
 
     <section id="modeBanner" class="mb-8 rounded-[1.5rem] border border-white/10 bg-white/[0.04] p-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
@@ -137,7 +140,12 @@
       <div class="rounded-[1.5rem] border border-white/10 bg-neutral-950/70 p-4 shadow-2xl shadow-black/30 backdrop-blur-xl">
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-sm font-semibold uppercase tracking-[0.22em] text-neutral-500">Live event feed</h2>
-          <div class="flex gap-3">
+          <div class="flex items-center gap-3">
+            <div class="flex rounded-lg border border-white/10 text-xs overflow-hidden">
+              <button onclick="setFilter('all')" id="filterAll" class="px-2 py-1 bg-white/10 text-white">All</button>
+              <button onclick="setFilter('hooks-on')" id="filterProtected" class="px-2 py-1 text-neutral-500 hover:text-neutral-200">Protected</button>
+              <button onclick="setFilter('hooks-off')" id="filterNaive" class="px-2 py-1 text-neutral-500 hover:text-neutral-200">Naive</button>
+            </div>
             <button onclick="downloadReport()" class="text-xs text-neutral-500 hover:text-neutral-200">download report</button>
             <button onclick="clearFeedOnly()" class="text-xs text-neutral-500 hover:text-neutral-200">clear</button>
           </div>
@@ -158,6 +166,20 @@
     </section>
   </main>
 
+  <div id="warningOverlay" class="fixed inset-0 hidden items-center justify-center bg-black/70 p-6 backdrop-blur-md">
+    <div class="max-w-2xl rounded-[2rem] border border-amber-300/20 bg-gradient-to-br from-amber-600 to-amber-950 p-8 text-white shadow-2xl shadow-amber-950/60">
+      <div class="text-5xl font-semibold tracking-[-0.05em]">UNPROTECTED</div>
+      <div id="warnHook" class="mt-3 text-lg font-semibold text-amber-100"></div>
+      <div id="warnReason" class="mt-2 leading-7 text-amber-50/90"></div>
+      <div id="warnEvidence" class="mt-5 hidden rounded-2xl border border-white/15 bg-black/35 p-4 text-left">
+        <div class="text-[11px] uppercase tracking-[0.22em] text-amber-100/70">Threat got through</div>
+        <div id="warnElement" class="mt-2 font-mono text-xs text-amber-50/80"></div>
+        <pre id="warnText" class="mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-words text-xs text-amber-50"></pre>
+      </div>
+      <button onclick="hideWarning()" class="mt-6 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-50">Dismiss</button>
+    </div>
+  </div>
+
   <div id="hero" class="fixed inset-0 hidden items-center justify-center bg-black/80 p-6 backdrop-blur-md">
     <div class="max-w-2xl rounded-[2rem] border border-red-300/20 bg-gradient-to-br from-red-600 to-red-950 p-8 text-white shadow-2xl shadow-red-950/60">
       <div id="heroTitle" class="text-5xl font-semibold tracking-[-0.05em]">BLOCKED</div>
@@ -177,6 +199,8 @@ const tallies = {'hooks-off': {}, 'hooks-on': {}};
 let totalEvents = 0;
 let simulationMode = false;
 const seenSites = new Map();
+const feedEvents = [];
+let feedFilter = 'all';
 
 function byId(id){ return document.getElementById(id); }
 function countMode(mode){ return Object.values(tallies[mode] || {}).reduce((a,b)=>a+b,0); }
@@ -250,7 +274,9 @@ function resetRun(label, url){
   tallies['hooks-off'] = {};
   tallies['hooks-on'] = {};
   seenSites.clear();
+  feedEvents.length = 0;
   byId('feed').innerHTML = '';
+  if(!simulationMode) setRunButtons(true);
   byId('siteTimeline').innerHTML = '';
   byId('tally').innerHTML = '<div class="text-neutral-500">No threats recorded yet.</div>';
   byId('throughTotal').textContent = '0';
@@ -269,8 +295,49 @@ function resetRun(label, url){
   byId('liveView').removeAttribute('src');
 }
 
-function clearFeedOnly(){ byId('feed').innerHTML = ''; }
+function clearFeedOnly(){ byId('feed').innerHTML = ''; feedEvents.length = 0; }
 function hideHero(){ byId('hero').classList.add('hidden'); byId('hero').classList.remove('flex'); }
+function hideWarning(){ byId('warningOverlay').classList.add('hidden'); byId('warningOverlay').classList.remove('flex'); }
+
+function setRunButtons(disabled){
+  document.querySelectorAll('[data-run-url]').forEach(btn=>{
+    btn.disabled = disabled;
+    btn.style.opacity = disabled ? '0.45' : '';
+  });
+}
+
+function setFilter(f){
+  feedFilter = f;
+  ['all','hooks-on','hooks-off'].forEach(k=>{
+    const btn = byId(k === 'all' ? 'filterAll' : k === 'hooks-on' ? 'filterProtected' : 'filterNaive');
+    if(btn) btn.className = `px-2 py-1 ${k === f ? 'bg-white/10 text-white' : 'text-neutral-500 hover:text-neutral-200'}`;
+  });
+  const el = byId('feed');
+  el.innerHTML = '';
+  feedEvents.filter(ev => f === 'all' || ev.run_mode === f).forEach(ev => {
+    const row = _buildFeedRow(ev);
+    el.appendChild(row);
+  });
+}
+
+function showWarning(hook, reason, evidence){
+  byId('warnHook').textContent = hook || 'Security policy';
+  byId('warnReason').textContent = reason || '';
+  const ev = evidence || {};
+  const vt = ev.vulnerable_text || ev.decoded_payload || '';
+  const elName = ev.element || '';
+  const wrap = byId('warnEvidence');
+  if(vt || elName){
+    byId('warnElement').textContent = elName ? `stored in: ${elName}` : '';
+    byId('warnText').textContent = vt;
+    wrap.classList.remove('hidden');
+  } else {
+    wrap.classList.add('hidden');
+  }
+  byId('warningOverlay').classList.remove('hidden');
+  byId('warningOverlay').classList.add('flex');
+  setTimeout(hideWarning, 6000);
+}
 
 function showHero(hook, reason, evidence){
   byId('heroTitle').textContent = 'BLOCKED';
@@ -289,6 +356,7 @@ function showHero(hook, reason, evidence){
   }
   byId('hero').classList.remove('hidden');
   byId('hero').classList.add('flex');
+  setTimeout(hideHero, 8000);
 }
 
 function setVerdict(title, text, tone, evidence){
@@ -329,7 +397,7 @@ function upsertSite(site, state){
   else el.className = `${base} border-white/10 bg-white/[0.06] text-neutral-300`;
 }
 
-function addFeed(ev){
+function _buildFeedRow(ev){
   const row = document.createElement('div');
   const t = new Date(ev.ts).toLocaleTimeString();
   const mode = ev.run_mode === 'hooks-off' ? 'PROTECTION OFF' : 'PROTECTION ON';
@@ -342,7 +410,14 @@ function addFeed(ev){
   const reason = ev.reason ? ` — ${ev.reason}` : '';
   const latency = ev.latency_ms != null ? ` [${ev.latency_ms}ms]` : '';
   row.textContent = `${t} [${mode}] ${tag} ${ev.site?.domain || ''} ${ev.decision || ev.kind}${reason}${latency}`;
-  byId('feed').prepend(row);
+  return row;
+}
+
+function addFeed(ev){
+  feedEvents.unshift(ev);
+  if(feedFilter === 'all' || ev.run_mode === feedFilter){
+    byId('feed').prepend(_buildFeedRow(ev));
+  }
 }
 
 function renderTally(){
@@ -391,6 +466,7 @@ function handle(ev){
     if(mode === 'hooks-off'){
       upsertSite(ev.site, 'through');
       setVerdict('Threat got through with protection off', ev.reason, 'amber', ev.evidence);
+      showWarning(ev.hook, ev.reason, ev.evidence);
     } else {
       upsertSite(ev.site, 'block');
       setVerdict('BrowseCheck blocked before action', ev.reason, 'red', ev.evidence);
@@ -403,6 +479,7 @@ function handle(ev){
   }
   if(ev.kind === 'run-complete'){
     byId('runBadge').textContent = 'complete';
+    setRunButtons(false);
     if(countMode('hooks-on') === 0 && countMode('hooks-off') === 0){
       setModeState(byId('currentMode').textContent, 'COMPLETE — normal path allowed', 'green');
       setVerdict('Normal path completed', 'The agent filled and submitted the application with no intervention.', 'green');
@@ -412,6 +489,7 @@ function handle(ev){
       setModeState(byId('currentMode').textContent, 'COMPLETE — protection off let the attack through', 'amber');
     }
   }
+  if(ev.kind === 'error'){ setRunButtons(false); }
 }
 
 const es = new EventSource('/events');
@@ -461,6 +539,17 @@ async function downloadReport(){
     a.click();
   }catch(e){ console.error(e); }
 }
+
+async function loadStatus(){
+  try{
+    const r = await fetch('/status');
+    const d = await r.json();
+    const badge = byId('runningBadge');
+    if(d.active){ badge.classList.remove('hidden'); }
+    else { badge.classList.add('hidden'); }
+  }catch(e){}
+}
+setInterval(loadStatus, 2000); loadStatus();
 
 async function loadLiveView(){
   if(simulationMode) return;
