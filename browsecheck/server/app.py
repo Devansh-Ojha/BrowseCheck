@@ -30,6 +30,7 @@ _DASHBOARD = _ROOT / "dashboard" / "index.html"
 _FIXTURES = _ROOT / "tests" / "fixtures"
 _last_scorecard: dict = {}
 _live_view: dict = {"url": "", "env": _settings.env}
+_tasks = set()  # ponytail: keep refs so tasks don't get GC'd
 
 
 @app.get("/")
@@ -74,7 +75,9 @@ async def events() -> StreamingResponse:
 
 @app.post("/run/synthetic")
 async def run_synthetic_demo() -> JSONResponse:
-    asyncio.create_task(run_synthetic())
+    task = asyncio.create_task(run_synthetic())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
     return JSONResponse({"status": "started", "mode": "synthetic"})
 
 
