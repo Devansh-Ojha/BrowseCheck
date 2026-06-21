@@ -27,9 +27,9 @@ prompt injection + a credential-harvesting form. **Our layer blocks it live,
 before the agent acts** — the threat pops on the dashboard. Then a before/after
 scorecard shows "threats through (protection off) vs blocked (protection on)".
 
-**Scope of THIS repo:** the agent, Stagehand/Browserbase integration, the hook
-pipeline, the control loop, observability, the live dashboard, and the scorecard.
-We do NOT build the malicious sites (the red team does — we just get URLs).
+**Scope of THIS repo:** the agent (Claude tool-use loop over CDP/Browserbase),
+the hook pipeline, the control loop, observability, the live dashboard, and the
+scorecard. We do NOT build the malicious sites (the red team does — we get URLs).
 
 ## 2. Architecture at a glance
 
@@ -37,10 +37,10 @@ We do NOT build the malicious sites (the red team does — we just get URLs).
          user task + 5 sites
                  │
    ┌─────────────▼───────────────┐
-   │  control loop (P1)           │   for each step:
-   │  observe() ─► hooks ─► act() │     observe proposed action
-   └─────────────┬───────────────┘     run hook pipeline
-                 │ publishes            if BLOCK: stop, never act()
+   │  control loop (P1)           │   each turn Claude proposes a
+   │  tool_use ─► hooks ─► act()  │     tool call (navigate/click/
+   └─────────────┬───────────────┘     fill/read_page/finish)
+                 │ publishes            if BLOCK: never execute it
                  ▼
          SecurityEvent  ──►  event_bus  ──►  sinks (P2)
                                               ├─ MemorySink  → scorecard tally
@@ -87,27 +87,30 @@ Change the contract only by mutual consent.
 ---
 
 ## Person 1 (repo owner) — control loop + Browserbase + 2 hero hooks
+Architecture (decided): we own the loop via the **Anthropic tool-use API** and
+execute browser tools over **CDP with Playwright** (Browserbase or local). Every
+`tool_use` is gated by the hook pipeline before it touches the browser — so
+pre-action gating is guaranteed by construction (this retired risk #1). No Stagehand.
+
 Files you own:
-- `browser/session.py` — Stagehand init (LOCAL/BROWSERBASE), `observe()`, `act()`, `snapshot()`.
+- `browser/session.py` — Playwright/CDP executor: `start()` (connect_over_cdp to Browserbase / local Chromium), `BROWSER_TOOLS` schema, `execute_tool()`, `snapshot()`.
 - `browser/replay.py` — Browserbase live-view URL for the dashboard iframe.
-- `controlloop/loop.py` — observe -> hooks -> act -> log; the block short-circuit.
-- `llm/provider.py` — Anthropic wrapper (already stubbed; tune prompts/timeouts).
+- `controlloop/loop.py` — the Claude tool-use loop: gate every `tool_use` (incl. `finish` = relay surface) before executing; block short-circuit.
+- `llm/provider.py` — Anthropic wrapper: `classify()` (hooks) + `respond()` (agent loop).
 - `hooks/prompt_injection.py` — **HERO 1, build first.**
 - `hooks/intent_drift.py` — **HERO 2.**
 - `tasks/demo_task.py` — fill in the 4 real benign URLs.
 - `server/app.py` `/run` endpoint — wire the real traversal (TODO marked inline).
 
 Ordered:
-1. **RISK SPIKE (hour 0–2):** confirm Stagehand Python `observe()` returns an
-   inspectable proposal and `act()` runs ONLY that — true pre-action gating. If
-   not, fall back (pin version / Playwright+LLM / TS). *Blocks everything.*
-2. Get `BrowserSession` working LOCAL: goto -> observe -> snapshot -> act on a benign page.
+1. Install + browser: `pip install -r requirements.txt && python -m playwright install chromium`.
+2. Get `BrowserSession` working LOCAL: `start` -> `goto` -> `read_page`/`click`/`fill` -> `snapshot`.
 3. Implement `PromptInjectionHook` against saved adversarial HTML snippets (unit test it).
-4. Wire `controlloop/loop.py` with prompt-injection only; emit events to the bus.
-5. Implement `IntentDriftHook`; add to registry.
-6. Flip `ENV=BROWSERBASE`; verify parity; wire live-view URL.
+4. Run `controlloop/loop.py` LOCAL with prompt-injection only; confirm a `tool_use` is gated BEFORE `execute_tool`, and events hit the bus.
+5. Implement `IntentDriftHook`; add to registry. Then the red-team tasks A–E (section 6).
+6. Flip `ENV=BROWSERBASE`: verify `_create_browserbase_session()` connectUrl + CDP connect; wire live-view URL.
 7. Add `snapshot()` pending_download + cert capture (feeds P2's deterministic hooks).
-8. When the red-team URL lands: add to `demo_task.py`, run, confirm live block before `act()`.
+8. When the red-team URL lands: add to `demo_task.py`, run, confirm the live block — `read_page` on the poisoned page returns BLOCKED (poison never enters context) and any `finish` relay is blocked.
 
 ## 5. Person 2 (TEAMMATE) — events + Sentry + dashboard + scorecard + deterministic hooks
 
@@ -140,7 +143,7 @@ Ordered:
 ---
 
 ## Critical path (one end-to-end block first, then breadth)
-1. P1 risk spike passes ➜ 2. P1 prompt-injection blocks on a snippet ➜
+1. P1 loop gates a `tool_use` locally ➜ 2. P1 prompt-injection blocks on a snippet ➜
 3. P2 dashboard shows that block via the real bus ➜ **MILESTONE: pipeline proven**
 ➜ 4. breadth (intent-drift, deterministic, scorecard, live-view) ➜
 5. red-team URL drops in ➜ **live hero block.**
@@ -148,3 +151,66 @@ Ordered:
 ## Integration contract between P1 and P2
 - P1 publishes `SecurityEvent`s via `event_bus.publish(...)` (already wired in the loop).
 - P2 consumes them via SSE — never imports P1's modules. Synthetic emitter proves the wire.
+
+---
+
+## 6. Red-team attack methodology & our defense mapping
+
+The red team's attack is an **indirect prompt injection that targets the agent's
+OUTPUT, not a browser action.** The hidden payload doesn't make the agent enter
+credentials itself — it makes the agent *tell the user* to go sign in at a
+look-alike phishing page ("your session expired, sign in here [link]"). The
+human then types credentials into the fake page.
+
+**Architectural consequence (READ THIS):** pure action-gating can miss this,
+because the harmful step may be a *text answer to the user*, not a click. So we
+must (a) scan every page the moment we land on it — before the agent reasons —
+and (b) treat the agent's user-facing answer as a gated step, not just clicks.
+Detect-at-source + block-before-relay is our story, and it's a differentiator:
+action-only guards don't catch the relay vector.
+
+### Technique → defense
+| Red-team technique | Hides in | Defense | Owner |
+|---|---|---|---|
+| Fake `[SYSTEM MESSAGE]`/`[SYSTEM ALERT]`, "ignore all previous instructions", session-expired / premium / account-alert angles | page or hidden text | `prompt_injection` LLM scan | P1 |
+| Invisible CSS: `display:none`, `visibility:hidden`, `font-size:0`, `color:transparent`, `opacity:0`, off-screen | hidden DOM | hidden-vs-rendered diff: any directive present in DOM but not visible = strong block signal | P1 |
+| Image `alt`-text directive | `<img alt="...">` | extract & scan all `alt` attributes | P1 |
+| HTML comment directive | `<!-- ... -->` | extract & scan comments | P1 |
+| Base64 / obfuscated "decode and follow" payload | encoded string | deterministically decode suspicious tokens, scan decoded text, flag the "decode & follow" meta-instruction | P1 |
+| Social-engineering **relay** (agent told to direct USER to sign in at link) | agent output | page-entry scan blocks before relay; `intent_drift` flags "direct user to authenticate / external login" as out-of-scope | P1 |
+| Look-alike domain (`accounts-google.com`) | phishing link / form action | `credential_phish`: typosquat/homoglyph/extra-word/different-TLD check vs legit auth domains | P2 |
+| Mirrored login page / static form mimicking OAuth | capture page | `credential_phish`: password field on non-auth domain + form-action mismatch + no real OAuth redirect | P2 |
+
+### P1 — NEW tasks (fold into section "Person 1" ordered list)
+- **A. Page-entry scan (control loop):** run the hook pipeline immediately after
+  `goto`, before/independent of `observe()`, so a poisoned page is caught even
+  when the agent proposes no click. Also gate the agent's final answer/relay.
+- **B. Injection-surface extraction (`snapshot`):** extract hidden-element text,
+  all `alt` attributes, and HTML comments; compute the hidden-vs-rendered diff;
+  decode base64/obfuscated tokens. Feed these explicitly to `prompt_injection`
+  (improves recall + cuts tokens + beats the base64 evasion pro-tip).
+- **C. Harden `prompt_injection` prompt:** name these exact payload shapes + the
+  relay pattern + the base64 "decode & follow" trick; require flagging any
+  directive that appears only in hidden/alt/comment surfaces.
+- **D. `intent_drift` relay rule:** explicitly block proposing to tell the user
+  to authenticate / visit an external login during a form-fill task.
+- **E. Regression snippets:** save HTML fixtures for all 3 angles (A/B/C) × all 3
+  embeddings (invisible CSS, alt-text, base64) and unit-test => block.
+
+### P2 — coordination
+- `credential_phish`: add look-alike detection (hyphen/extra-word/TLD swap/
+  homoglyph) vs `LEGIT_AUTH_DOMAINS`; block password fields on near-match hosts.
+- Dashboard hero copy for the relay case, e.g. *"BLOCKED — page tried to make the
+  agent send you to a fake login (accounts-google.com)."*
+
+### Open questions for the red team / you (before the URL lands)
+1. Is the hidden injection embedded in one of the 5 task sites (the fake Berkeley
+   portal), and is the credential-capture page the SAME page or a separate link
+   the agent is told to relay? (Decides whether the demo block is page-entry
+   injection detection, credential-form detection, or both.)
+2. Which angle (A/B/C) and which embedding (invisible CSS / alt-text / base64)
+   will the demo URL use, so our fixtures + demo match exactly?
+3. Do we want the hero block to demonstrate the **relay** ("agent was about to
+   tell you to sign in at …") — the novel, differentiating angle — vs. an action?
+4. What exact look-alike domain will the capture page use, so `credential_phish`
+   can be tuned/tested against it?
