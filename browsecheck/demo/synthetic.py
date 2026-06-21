@@ -20,8 +20,8 @@ _BENIGN = [
     SiteRef(url="https://example.com/hackathon-4", domain="example.com", label="Benign #4"),
 ]
 _MALICIOUS = SiteRef(
-    url="https://fake-berkeley-hackathon.example/apply",
-    domain="fake-berkeley-hackathon.example",
+    url="https://aihackberkeley.org/",
+    domain="aihackberkeley.org",
     label="Fake Berkeley portal",
 )
 

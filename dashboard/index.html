@@ -20,7 +20,9 @@
         <p class="text-neutral-400 text-sm">Runtime security for AI browser agents — prevention, not observation.</p>
       </div>
       <div class="flex gap-2">
-        <button onclick="post('/run/synthetic')" class="px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Run demo (synthetic)</button>
+        <button onclick="post('/run?enforce=on')" class="px-3 py-2 rounded-md bg-green-600 hover:bg-green-500 text-sm font-medium">Run live (protected)</button>
+        <button onclick="post('/run?enforce=off')" class="px-3 py-2 rounded-md bg-amber-600 hover:bg-amber-500 text-sm font-medium">Run unprotected</button>
+        <button onclick="post('/run/synthetic')" class="px-3 py-2 rounded-md bg-indigo-600 hover:bg-indigo-500 text-sm font-medium">Synthetic</button>
         <button onclick="post('/scorecard/run')" class="px-3 py-2 rounded-md bg-neutral-800 hover:bg-neutral-700 text-sm font-medium">Compute scorecard</button>
       </div>
     </header>
@@ -30,9 +32,9 @@
       <section class="lg:col-span-2 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
         <h2 class="text-sm uppercase tracking-wide text-neutral-400 mb-2">Live agent</h2>
         <div id="siteTimeline" class="flex flex-wrap gap-2 mb-3 text-xs"></div>
-        <!-- TODO(P1): set iframe src to the Browserbase live-view URL -->
+        <!-- src is set by loadLiveView() from GET /live-view (Browserbase debuggerFullscreenUrl) -->
         <iframe id="liveView" class="w-full h-72 rounded-lg bg-black border border-neutral-800"
-                title="Browserbase live view"></iframe>
+                title="Browserbase live view" allow="fullscreen"></iframe>
       </section>
 
       <!-- Threat tally -->
@@ -61,6 +63,11 @@
       <div class="text-5xl font-black tracking-tight">BLOCKED</div>
       <div id="heroHook" class="mt-2 text-lg font-semibold"></div>
       <div id="heroReason" class="mt-1 text-red-100"></div>
+      <div id="heroEvidence" class="mt-3 hidden text-left">
+        <div class="text-[11px] uppercase tracking-wide text-red-200/80">Vulnerable content</div>
+        <div id="heroElement" class="text-xs font-mono text-red-100/90 mb-1"></div>
+        <pre id="heroText" class="max-h-40 overflow-auto whitespace-pre-wrap break-words text-xs bg-black/40 rounded p-2 text-red-50"></pre>
+      </div>
       <button onclick="hideHero()" class="mt-4 px-3 py-1.5 rounded-md bg-white/20 hover:bg-white/30 text-sm">dismiss</button>
     </div>
   </div>
@@ -69,9 +76,20 @@
 const tally = {};
 async function post(url){ try{ await fetch(url, {method:'POST'}); }catch(e){ console.error(e);} }
 function hideHero(){ document.getElementById('hero').classList.add('hidden'); document.getElementById('hero').classList.remove('flex'); }
-function showHero(hook, reason){
+function showHero(hook, reason, evidence){
   document.getElementById('heroHook').textContent = hook || '';
   document.getElementById('heroReason').textContent = reason || '';
+  const ev = evidence || {};
+  const vt = ev.vulnerable_text || ev.vulnerableText || '';
+  const elName = ev.element || '';
+  const wrap = document.getElementById('heroEvidence');
+  if(vt || elName){
+    document.getElementById('heroElement').textContent = elName ? ('stored in: ' + elName) : '';
+    document.getElementById('heroText').textContent = vt;
+    wrap.classList.remove('hidden');
+  } else {
+    wrap.classList.add('hidden');
+  }
   const h = document.getElementById('hero');
   h.classList.remove('hidden'); h.classList.add('flex');
 }
@@ -99,7 +117,10 @@ function addFeed(ev){
   if(ev.kind==='hook-block') color='text-red-400';
   const tag = ev.hook ? `[${ev.hook}]` : `[${ev.kind}]`;
   row.className = color;
-  row.textContent = `${t} ${tag} ${ev.site?.domain||''} ${ev.decision||ev.kind} ${ev.reason?('— '+ev.reason):''}`;
+  let line = `${t} ${tag} ${ev.site?.domain||''} ${ev.decision||ev.kind} ${ev.reason?('— '+ev.reason):''}`;
+  const elName = ev.evidence && ev.evidence.element;
+  if(ev.kind==='hook-block' && elName){ line += `  @ ${elName}`; }
+  row.textContent = line;
   const feed = document.getElementById('feed');
   feed.prepend(row);
 }
@@ -124,7 +145,7 @@ function handle(ev){
     upsertSite(ev.site,'block');
     tally[ev.category||'unknown'] = (tally[ev.category||'unknown']||0)+1;
     renderTally();
-    showHero(ev.hook, ev.reason);
+    showHero(ev.hook, ev.reason, ev.evidence);
   }
 }
 
@@ -148,6 +169,15 @@ async function loadScorecard(){
   }catch(e){}
 }
 setInterval(loadScorecard, 3000); loadScorecard();
+
+async function loadLiveView(){
+  try{
+    const r = await fetch('/live-view'); const d = await r.json();
+    const f = document.getElementById('liveView');
+    if(d.url && f.getAttribute('src') !== d.url){ f.setAttribute('src', d.url); }
+  }catch(e){}
+}
+setInterval(loadLiveView, 2000); loadLiveView();
 </script>
 </body>
 </html>
