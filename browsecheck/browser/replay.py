@@ -1,8 +1,8 @@
 """Browserbase Live View URL helper for the dashboard iframe. OWNER: Person 1.
 
 The dashboard embeds the live session so the audience watches the agent browse.
-TODO(P1): call the Browserbase API to fetch the live-view/debug URL for the
-current session id, or read it off the Stagehand instance if exposed.
+Pass `BrowserSession.session_id` (set in `_create_browserbase_session()`).
+TODO(P1): confirm the Browserbase debug endpoint/field for the live-view URL.
 """
 
 from __future__ import annotations

@@ -73,6 +73,27 @@ class LLMProvider:
                 return dict(block.input)
         return {}
 
+    async def respond(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        max_tokens: int = 2048,
+    ):
+        """One turn of the AGENT loop. Returns the raw Anthropic response so the
+        control loop can inspect tool_use blocks (proposed actions) and gate them
+        BEFORE executing. The loop never auto-executes tools — that is the whole
+        point of owning the loop ourselves."""
+        client = self._client_or_raise()
+        return await client.messages.create(
+            model=self.settings.anthropic_model,
+            max_tokens=max_tokens,
+            system=system,
+            tools=tools,
+            messages=messages,
+        )
+
 
 _provider: LLMProvider | None = None
 

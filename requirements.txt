@@ -2,7 +2,7 @@
 # Install everything:  pip install -r requirements.txt
 
 # --- CORE (server + dashboard + scorecard) — all P2 needs to run the demo ---
-# The server does NOT import stagehand/anthropic at load time, so if the agent
+# The server does NOT import anthropic/playwright at load time, so if the agent
 # SDKs below are slow/awkward to install you can run the synthetic demo with
 # just these:  pip install fastapi "uvicorn[standard]" "pydantic>=2" python-dotenv
 fastapi              # dashboard backend + SSE
@@ -11,9 +11,13 @@ pydantic>=2          # contracts (frozen models)
 python-dotenv        # .env loading
 
 # --- AGENT (P1: live Browserbase traversal + hero hooks) ---
-stagehand            # Stagehand Python SDK (Browserbase agent: observe/act)
-anthropic            # Claude — powers the two hero hooks
-httpx                # Browserbase REST calls (live-view URL, session info)
+# Architecture: we own the agent loop via the Anthropic tool-use API and execute
+# browser tools over CDP with Playwright (Browserbase or local Chromium). Every
+# proposed tool call is gated by the hook pipeline BEFORE it touches the browser.
+# After install, fetch the browser once:  python -m playwright install chromium
+anthropic            # Claude — drives the agent loop + powers the two hero hooks
+playwright           # CDP executor (connect_over_cdp to Browserbase, or local)
+httpx                # Browserbase REST (create session, live-view URL)
 
 # --- OBSERVABILITY (optional; activates only when SENTRY_DSN is set) ---
 sentry-sdk
