@@ -91,6 +91,8 @@ class HookContext(BaseModel):
     page: PageSnapshot
     step_index: int
     session_id: str
+    # Injections caught on PREVIOUS sites this session — for cross-site carryover detection.
+    session_memory: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class HookResult(BaseModel):
