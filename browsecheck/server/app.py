@@ -7,6 +7,9 @@ Endpoints:
   POST /run?enforce=on|off -> real traversal via the control loop (P1 wiring)
   GET  /scorecard        -> last computed before/after tally
   POST /scorecard/run    -> run hooks-off + hooks-on, return the tally
+  GET  /status           -> current run state + live-view URL
+  GET  /metrics          -> per-hook avg latency
+  GET  /report           -> full event log as JSON
 
 Run:  uvicorn browsecheck.server.app:app --reload --port 8000
 """
@@ -31,6 +34,7 @@ _FIXTURES = _ROOT / "tests" / "fixtures"
 _last_scorecard: dict = {}
 _live_view: dict = {"url": "", "env": _settings.env}
 _tasks: set = set()  # ponytail: keep refs so tasks don't get GC'd
+_run_active: bool = False
 
 # Recorded fallback — pre-baked result shown on stage if live scorecard fails.
 _RECORDED_SCORECARD: dict = {
@@ -59,6 +63,12 @@ async def fixture(name: str) -> Response:
 async def live_view() -> JSONResponse:
     """Browserbase live-view URL for the dashboard iframe (empty in LOCAL mode)."""
     return JSONResponse(_live_view)
+
+
+@app.get("/status")
+async def get_status() -> JSONResponse:
+    """Current run state — poll this to show a RUNNING indicator."""
+    return JSONResponse({"active": _run_active, "live_view": _live_view})
 
 
 @app.get("/events")
@@ -106,16 +116,17 @@ async def debug_suspicious() -> JSONResponse:
 
 @app.post("/run")
 async def run(enforce: str = "on") -> JSONResponse:
-    """Real traversal via the Claude tool-use control loop (LOCAL or BROWSERBASE).
+    """Real traversal via the Claude tool-use control loop (LOCAL or BROWSERBASE)."""
+    global _run_active
+    if _run_active:
+        return JSONResponse({"error": "run already in progress"}, status_code=409)
 
-    Runs in the background and streams SecurityEvents to the dashboard over SSE.
-    Requires ANTHROPIC_API_KEY (and BROWSERBASE_* when ENV=BROWSERBASE). Failures
-    are surfaced as an `error` event on the feed rather than crashing the server.
-    """
     run_mode = "hooks-on" if enforce == "on" else "hooks-off"
-    _live_view["url"] = ""  # reset; refreshed once the session connects
+    _live_view["url"] = ""
 
     async def _run() -> None:
+        global _run_active
+        _run_active = True
         from ..contracts import SecurityEvent, SiteRef, new_id
         from ..events.bus import event_bus
 
@@ -152,8 +163,12 @@ async def run(enforce: str = "on") -> JSONResponse:
                 site=SiteRef(url="", domain=""), kind="error",
                 reason=f"run failed: {exc}",
             ))
+        finally:
+            _run_active = False
 
-    asyncio.create_task(_run())
+    task = asyncio.create_task(_run())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
     return JSONResponse({"status": "started", "mode": "live", "enforce": enforce})
 
 
@@ -166,14 +181,21 @@ async def get_scorecard() -> JSONResponse:
 async def run_scorecard_endpoint() -> JSONResponse:
     """Kick off the before/after scorecard in the background. Poll GET /scorecard
     for the result. Falls back to the recorded scorecard if the live run fails."""
+    global _run_active
+    if _run_active:
+        return JSONResponse({"error": "run already in progress"}, status_code=409)
+
     async def _run() -> None:
-        global _last_scorecard
+        global _run_active, _last_scorecard
+        _run_active = True
         try:
             from ..scorecard.runner import run_scorecard
             from ..tasks.demo_task import USER_TASK, demo_sites
             _last_scorecard = await run_scorecard(USER_TASK, demo_sites())
         except Exception:  # noqa: BLE001 — use recorded fallback on stage
             _last_scorecard = _RECORDED_SCORECARD
+        finally:
+            _run_active = False
 
     task = asyncio.create_task(_run())
     _tasks.add(task)
