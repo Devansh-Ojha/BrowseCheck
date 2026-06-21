@@ -34,7 +34,6 @@ async def run_scorecard(user_task: str, sites: list[SiteRef]) -> dict:
                 user_task=user_task, sites=sites,
                 enforce=enforce, run_mode=run_mode,  # type: ignore[arg-type]
                 session_id=new_id(),
-                agent_profile="protected" if enforce else "naive",
             )
         finally:
             await session.close()
