@@ -128,6 +128,10 @@ async def run_traversal(
             resp = await provider.respond(system=system, messages=messages, tools=tools)
             messages.append({"role": "assistant", "content": _serialize_assistant(resp.content)})
 
+            for block in resp.content:
+                if getattr(block, "type", None) == "text":
+                    await emit(kind="agent-thinking", step_index=step, site=site, thinking=block.text)
+
             tool_uses = [b for b in resp.content if getattr(b, "type", None) == "tool_use"]
             if not tool_uses:
                 break  # Claude answered with plain text and proposed no tool — done.
