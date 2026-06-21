@@ -40,10 +40,16 @@ async def run_synthetic(session_id: str = "synthetic", delay: float = 0.7) -> No
         await emit(kind="navigate", site=site)
         await emit(kind="hook-pass", site=site, hook="prompt_injection",
                    category="injection", decision=Decision.ALLOW,
-                   severity=Severity.INFO, reason="no adversarial content")
+                   severity=Severity.INFO, reason="no adversarial content", latency_ms=312)
         await emit(kind="hook-pass", site=site, hook="intent_drift",
                    category="intent", decision=Decision.ALLOW,
-                   severity=Severity.INFO, reason="action within task scope")
+                   severity=Severity.INFO, reason="action within task scope", latency_ms=284)
+        await emit(kind="hook-pass", site=site, hook="credential_phish",
+                   category="credential", decision=Decision.ALLOW,
+                   severity=Severity.INFO, reason="no password field", latency_ms=1)
+        await emit(kind="hook-pass", site=site, hook="cert_ssl",
+                   category="cert", decision=Decision.ALLOW,
+                   severity=Severity.INFO, reason="valid HTTPS", latency_ms=0)
         await emit(kind="act", site=site, reason="filled application form")
         await emit(kind="site-complete", site=site)
 
@@ -51,7 +57,7 @@ async def run_synthetic(session_id: str = "synthetic", delay: float = 0.7) -> No
     await emit(kind="navigate", site=_MALICIOUS)
     await emit(kind="hook-block", site=_MALICIOUS, hook="prompt_injection",
                category="injection", decision=Decision.BLOCK,
-               severity=Severity.CRITICAL,
+               severity=Severity.CRITICAL, latency_ms=341,
                reason="hidden instruction telling the agent to send the user to a phishing login",
                evidence={
                    "vulnerable_text": (
@@ -68,7 +74,7 @@ async def run_synthetic(session_id: str = "synthetic", delay: float = 0.7) -> No
                })
     await emit(kind="hook-block", site=_MALICIOUS, hook="credential_phish",
                category="credential", decision=Decision.BLOCK,
-               severity=Severity.CRITICAL,
+               severity=Severity.CRITICAL, latency_ms=2,
                reason="password field posting to a look-alike domain",
                evidence={
                    "vulnerable_text": '<form action="https://accounts-google.com/login">',
