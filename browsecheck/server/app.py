@@ -161,13 +161,27 @@ async def run(enforce: str = "on", target: str = "all") -> JSONResponse:
             from ..browser.session import BrowserSession
             from ..controlloop.loop import run_traversal
             from ..hooks.factory import build_registry
-            from ..tasks.demo_task import USER_TASK, demo_sites, legit_sites, malicious_sites
+            from ..tasks.demo_task import (
+                SHOPPING_SYSTEM,
+                SHOPPING_TASK,
+                USER_TASK,
+                demo_sites,
+                legit_sites,
+                malicious_sites,
+                shopping_sites,
+            )
 
             protected = enforce == "on"
+            user_task = USER_TASK
+            system = None
             if target == "malicious":
                 sites = malicious_sites()
             elif target == "legit":
                 sites = legit_sites()
+            elif target == "ebay":
+                sites = shopping_sites()
+                user_task = SHOPPING_TASK
+                system = SHOPPING_SYSTEM
             else:
                 sites = demo_sites()
             session = BrowserSession(expose_hidden_surfaces=not protected)
@@ -178,11 +192,12 @@ async def run(enforce: str = "on", target: str = "all") -> JSONResponse:
             try:
                 await run_traversal(
                     session, build_registry(),
-                    user_task=USER_TASK,
+                    user_task=user_task,
                     sites=sites,
                     enforce=protected, run_mode=run_mode,
                     session_id=session_id,
                     stop_event=_stop_event,
+                    system=system,
                 )
             finally:
                 if _settings.is_browserbase:

@@ -87,12 +87,13 @@ async def run_traversal(
     run_mode: RunMode,
     session_id: str,
     stop_event=None,
+    system: str | None = None,
 ) -> None:
     from ..llm.provider import get_provider
 
     provider = get_provider()
     tools = session.tool_schemas()
-    system = _SYSTEM
+    system = system or _SYSTEM
 
     async def emit(**kw) -> None:
         await event_bus.publish(SecurityEvent(session_id=session_id, run_mode=run_mode, **kw))

@@ -166,7 +166,7 @@ class BrowserSession:
             return await self.goto(args.get("url", ""))
         if name == "read_page":
             snap = await self.snapshot()
-            rendered = snap.rendered_text[:6000] or "(page has no visible text)"
+            rendered = snap.rendered_text[:8000] or "(page has no visible text)"
             if not self.expose_hidden_surfaces:
                 return rendered
             from ..hooks._injection_surfaces import extract_injection_surfaces
@@ -174,11 +174,14 @@ class BrowserSession:
             surfaces = extract_injection_surfaces(snap.raw_html)
             if not surfaces:
                 return rendered
+            # Suspicious surfaces first so a planted lure isn't crowded out by the
+            # many benign alt/aria texts on a real listing page.
+            surfaces.sort(key=lambda s: not s.get("suspicious"))
             dom_text = "\n".join(
                 f"- {surface.get('element')}: {surface.get('text')}"
-                for surface in surfaces[:12]
+                for surface in surfaces[:16]
             )
-            return f"{rendered}\n\nDOM/accessibility text available to the agent:\n{dom_text}"[:10000]
+            return f"{rendered}\n\nDOM/accessibility text available to the agent:\n{dom_text}"[:14000]
         if name == "click":
             return await self._click(args.get("text") or args.get("selector") or "")
         if name == "fill":
@@ -237,6 +240,31 @@ class BrowserSession:
             html = await self.page.content()
         except Exception:  # noqa: BLE001
             html = ""
+        # Child frames: sites like eBay render the item description in a separate
+        # iframe (#desc_ifr) that the top-level innerText / content() miss. Pull
+        # each child frame's text + HTML so the description (and any injection
+        # planted there) is visible to both the agent and the hooks.
+        try:
+            main = self.page.main_frame
+            for frame in self.page.frames:
+                if frame is main:
+                    continue
+                try:
+                    ftext = await frame.evaluate(
+                        "() => document.body ? document.body.innerText : ''"
+                    )
+                    if ftext:
+                        rendered = f"{rendered}\n{ftext}" if rendered else ftext
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    fhtml = await frame.content()
+                    if fhtml:
+                        html = f"{html}\n{fhtml}" if html else fhtml
+                except Exception:  # noqa: BLE001
+                    pass
+        except Exception:  # noqa: BLE001
+            pass
         return PageSnapshot(
             url=url,
             domain=_domain(url),
