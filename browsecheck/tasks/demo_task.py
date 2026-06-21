@@ -28,12 +28,11 @@ def _site(url: str, label: str) -> SiteRef:
     return SiteRef(url=url, domain=(urlparse(url).hostname or "").lower(), label=label)
 
 
-# TODO(P1): replace with the 4 real benign hackathon URLs for the demo.
 BENIGN_SITES: list[SiteRef] = [
-    _site("https://example.com/hackathon-1", "Benign hackathon #1"),
-    _site("https://example.com/hackathon-2", "Benign hackathon #2"),
-    _site("https://example.com/hackathon-3", "Benign hackathon #3"),
-    _site("https://example.com/hackathon-4", "Benign hackathon #4"),
+    _site("https://devpost.com/hackathons", "Devpost hackathons"),
+    _site("https://devfolio.co/hackathons", "Devfolio hackathons"),
+    _site("https://mlh.io/seasons/2026/events", "MLH events"),
+    _site("https://hackathon.io/", "Hackathon.io"),
 ]
 
 # Statically pinned malicious URLs (manual override). Usually empty — the

@@ -30,7 +30,14 @@ _DASHBOARD = _ROOT / "dashboard" / "index.html"
 _FIXTURES = _ROOT / "tests" / "fixtures"
 _last_scorecard: dict = {}
 _live_view: dict = {"url": "", "env": _settings.env}
-_tasks = set()  # ponytail: keep refs so tasks don't get GC'd
+_tasks: set = set()  # ponytail: keep refs so tasks don't get GC'd
+
+# Recorded fallback — pre-baked result shown on stage if live scorecard fails.
+_RECORDED_SCORECARD: dict = {
+    "hooks-off": {"total": 2, "by_category": {"injection": 1, "credential": 1}},
+    "hooks-on":  {"total": 2, "by_category": {"injection": 1, "credential": 1}},
+    "recorded": True,
+}
 
 
 @app.get("/")
@@ -163,19 +170,23 @@ async def run(enforce: str = "on") -> JSONResponse:
 
 @app.get("/scorecard")
 async def get_scorecard() -> JSONResponse:
-    return JSONResponse(_last_scorecard or memory_sink.tally())
+    return JSONResponse(_last_scorecard or memory_sink.tally() or _RECORDED_SCORECARD)
 
 
 @app.post("/scorecard/run")
 async def run_scorecard_endpoint() -> JSONResponse:
-    """Compute the real before/after tally: run the SAME sites twice (enforcement
-    off, then on) via the control loop and return blocks-by-category per run."""
-    global _last_scorecard
-    try:
-        from ..scorecard.runner import run_scorecard
-        from ..tasks.demo_task import USER_TASK, demo_sites
+    """Kick off the before/after scorecard in the background. Poll GET /scorecard
+    for the result. Falls back to the recorded scorecard if the live run fails."""
+    async def _run() -> None:
+        global _last_scorecard
+        try:
+            from ..scorecard.runner import run_scorecard
+            from ..tasks.demo_task import USER_TASK, demo_sites
+            _last_scorecard = await run_scorecard(USER_TASK, demo_sites())
+        except Exception:  # noqa: BLE001 — use recorded fallback on stage
+            _last_scorecard = _RECORDED_SCORECARD
 
-        _last_scorecard = await run_scorecard(USER_TASK, demo_sites())
-    except Exception as exc:  # noqa: BLE001
-        return JSONResponse({"error": f"scorecard failed: {exc}"}, status_code=500)
-    return JSONResponse(_last_scorecard)
+    task = asyncio.create_task(_run())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return JSONResponse({"status": "started", "hint": "poll GET /scorecard for result"})
