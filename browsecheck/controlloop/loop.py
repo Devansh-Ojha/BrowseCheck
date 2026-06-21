@@ -105,9 +105,20 @@ async def run_traversal(
         ctx = HookContext(
             user_task=user_task, proposed_action=action, page=snapshot,
             step_index=step, session_id=session_id,
+            session_memory=list(session_injections),  # snapshot for this evaluation
         )
         agg = await registry.run(ctx)
         for result in agg.results:
+            # Record injection blocks so cross_site_carryover can use them on later sites.
+            if result.decision == Decision.BLOCK and result.category == "injection":
+                session_injections.append({
+                    "site_domain": site.domain,
+                    "site_url": site.url,
+                    "step_index": step,
+                    "payload": result.evidence.get("vulnerable_text", result.reason),
+                    "element": result.evidence.get("element", ""),
+                    "proposed_action": action.description,
+                })
             await event_bus.publish(
                 SecurityEvent.from_hook_result(
                     result, session_id=session_id, run_mode=run_mode,
@@ -115,6 +126,10 @@ async def run_traversal(
                 )
             )
         return agg
+
+    # Accumulates injection payloads as we move across sites.
+    # Each entry: {site_domain, site_url, step_index, payload, element, proposed_action}
+    session_injections: list[dict] = []
 
     stopped = False
     for site in sites:
