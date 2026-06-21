@@ -14,14 +14,14 @@ from ..contracts import Decision, SecurityEvent, Severity, SiteRef
 from ..events.bus import event_bus, memory_sink
 
 _BENIGN = [
-    SiteRef(url="https://example.com/hackathon-1", domain="example.com", label="Benign #1"),
-    SiteRef(url="https://example.com/hackathon-2", domain="example.com", label="Benign #2"),
-    SiteRef(url="https://example.com/hackathon-3", domain="example.com", label="Benign #3"),
-    SiteRef(url="https://example.com/hackathon-4", domain="example.com", label="Benign #4"),
+    SiteRef(url="https://devpost.com/hackathons", domain="devpost.com", label="Devpost"),
+    SiteRef(url="https://devfolio.co/hackathons", domain="devfolio.co", label="Devfolio"),
+    SiteRef(url="https://mlh.io/seasons/2026/events", domain="mlh.io", label="MLH"),
+    SiteRef(url="https://hackathon.io/", domain="hackathon.io", label="Hackathon.io"),
 ]
 _MALICIOUS = SiteRef(
-    url="https://fake-berkeley-hackathon.example/apply",
-    domain="fake-berkeley-hackathon.example",
+    url="https://aihackberkeley.org/",
+    domain="aihackberkeley.org",
     label="Fake Berkeley portal",
 )
 
