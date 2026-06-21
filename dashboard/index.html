@@ -433,13 +433,13 @@ function metaFor(url, label){
     title:'NAIVE AGENT ON MALICIOUS PAGE', short:'Naive agent on malicious page', phase:'PROTECTION OFF: Browserbase will execute unsafe actions', tone:'amber', target:'malicious',
     hideInjectionCard:true,
     injectionLabel:'Website injection reached agent', injectionHelp:'Hidden website /login instruction entered the naive agent context.', injectionTone:'rose',
-    offTrackLabel:'Injected actions executed', offTrackHelp:'Browser actions the naive agent ran by following hidden injected page content (e.g. the phishing /login and credential entry).', offTrackTone:'amber',
+    offTrackLabel:'Off-task actions executed', offTrackHelp:'Browser actions the naive agent ran after being lured off its read-only task (e.g. heading to the fake /login and entering credentials).', offTrackTone:'amber',
     liveTitle:'Live naive Browserbase session', liveText:'Watch the browser follow the poisoned page when enforcement is off.'
   };
   if(url.includes('enforce=on') || url === '/debug/protected') return {
     title:'BROWSECHECK HARNESS ON SAME PAGE', short:'BrowseCheck harness on same page', phase:'PROTECTION ON: unsafe proposed actions are blocked before execution', tone:'green', target:'malicious',
-    injectionLabel:'Website injection blocked', injectionHelp:'Hidden website /login instruction was stopped before it could control the agent.', injectionTone:'green',
-    offTrackLabel:'Injected actions executed', offTrackHelp:'Stays 0: BrowseCheck blocks the hidden injected instruction before the agent can act on it.', offTrackTone:'green',
+    injectionLabel:'Unsafe actions blocked', injectionHelp:'BrowseCheck blocked the off-task sign-in (and the fake Google login) before the agent could act on it.', injectionTone:'green',
+    offTrackLabel:'Off-task actions executed', offTrackHelp:'Stays 0: BrowseCheck blocks the off-task sign-in before the agent can act on it.', offTrackTone:'green',
     liveTitle:'Live BrowseCheck Browserbase session', liveText:'Watch the same browser page stop before the injected login flow can execute.'
   };
   return {title:(label || 'RUNNING').toUpperCase(), short:label || 'Run started', phase:'RUNNING', tone:'neutral'};
@@ -823,7 +823,7 @@ function handle(ev){
     if(cat){
       tallies['hooks-on'][cat] = (tallies['hooks-on'][cat] || 0) + 1;
       renderTally();
-      if(cat === 'injection') byId('injectionCount').textContent = String(Number(byId('injectionCount').textContent || '0') + 1);
+      byId('injectionCount').textContent = String(Number(byId('injectionCount').textContent || '0') + 1);
       const blockTitle = cat === 'injection' ? 'Blocked a hidden, injected instruction'
         : cat === 'intent' ? 'Blocked an off-task action (defense-in-depth)'
         : 'BrowseCheck blocked before action';
