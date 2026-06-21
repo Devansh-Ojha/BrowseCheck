@@ -47,12 +47,22 @@
           Deterministic security layer for browser agents
         </div>
         <h1 class="max-w-3xl text-5xl font-semibold leading-[0.96] tracking-[-0.06em] text-white md:text-7xl">Same malicious page. Two agent outcomes.</h1>
+        <!-- TODO(copy): revisit this subtitle once the agent system prompt is generalized to a clean "apply to hackathons" task. -->
         <p class="mt-5 max-w-2xl text-base leading-7 text-neutral-400 md:text-lg">Both buttons use the same poisoned hackathon page. The /login instruction comes from hidden website content, not our system prompt.</p>
         <div class="mt-8 grid max-w-2xl gap-3 sm:grid-cols-2">
           <button id="btnDebugNaive" data-run-url="/run?enforce=off&target=malicious" onclick="post('/run?enforce=off&target=malicious','Naive agent on malicious page')" class="rounded-2xl border border-amber-300/25 bg-amber-300/10 px-5 py-4 text-left text-sm font-semibold text-amber-50 shadow-xl shadow-amber-950/20 disabled:cursor-not-allowed disabled:opacity-50">Run naive agent</button>
           <button id="btnDebugProtected" data-run-url="/run?enforce=on&target=malicious" onclick="post('/run?enforce=on&target=malicious','BrowseCheck harness on same page')" class="rounded-2xl border border-emerald-300/25 bg-emerald-300/10 px-5 py-4 text-left text-sm font-semibold text-emerald-50 shadow-xl shadow-emerald-950/20 disabled:cursor-not-allowed disabled:opacity-50">Run BrowseCheck harness</button>
         </div>
-        <div class="mt-4 max-w-2xl text-sm leading-6 text-neutral-500">Intent drift is checked before each browser action. BrowseCheck can block an off-task attempt while actual off-task actions executed stays at zero.</div>
+        <button id="btnStop" onclick="stopRun()" disabled class="mt-3 hidden w-full max-w-2xl rounded-2xl border border-red-400/30 bg-red-500/10 px-5 py-3 text-sm font-semibold text-red-100 shadow-xl shadow-red-950/20 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50">Stop run</button>
+        <div class="mt-4 max-w-2xl text-sm leading-6 text-neutral-500">BrowseCheck scans every page for hidden, injected instructions and blocks them before the agent acts — so the website-injected /login never executes.</div>
+        <div class="mt-6 max-w-2xl rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.2em] text-neutral-400">Control experiment — real site</div>
+          <p class="mt-1 text-sm leading-6 text-neutral-500">Run the same agent against the real <a href="https://ai.hackberkeley.org/" target="_blank" rel="noreferrer" class="text-emerald-300 underline decoration-dotted">ai.hackberkeley.org</a>. Nothing should be flagged — unless our model gets jumpy.</p>
+          <div class="mt-3 grid gap-3 sm:grid-cols-2">
+            <button id="btnLegitNaive" data-run-url="/run?enforce=off&target=legit" onclick="post('/run?enforce=off&target=legit','Real Berkeley site (naive)')" class="rounded-2xl border border-white/15 bg-white/[0.05] px-5 py-3 text-left text-sm font-semibold text-neutral-100 shadow-xl shadow-black/20 disabled:cursor-not-allowed disabled:opacity-50">Run naive on real site</button>
+            <button id="btnLegitProtected" data-run-url="/run?enforce=on&target=legit" onclick="post('/run?enforce=on&target=legit','Real Berkeley site (BrowseCheck)')" class="rounded-2xl border border-emerald-300/25 bg-emerald-300/10 px-5 py-3 text-left text-sm font-semibold text-emerald-50 shadow-xl shadow-emerald-950/20 disabled:cursor-not-allowed disabled:opacity-50">Run BrowseCheck on real site</button>
+          </div>
+        </div>
       </div>
 
       <aside id="summaryPanel" class="hidden rounded-[2rem] border border-white/10 bg-neutral-950/70 p-5 shadow-2xl shadow-black/40 backdrop-blur-xl">
@@ -71,9 +81,9 @@
               <div id="injectionHelp" class="mt-2 text-sm text-neutral-400">Hidden website content tells the agent to go to <code>/login</code>.</div>
             </div>
             <div id="offTrackCard" class="rounded-2xl border border-amber-400/15 bg-amber-400/[0.06] p-4">
-              <div id="offTrackLabel" class="text-xs uppercase tracking-[0.18em] text-amber-300/80">Off-task actions executed</div>
+              <div id="offTrackLabel" class="text-xs uppercase tracking-[0.18em] text-amber-300/80">Injected actions executed</div>
               <div class="mt-3 text-3xl font-semibold" id="offTrackCount">0</div>
-              <div id="offTrackHelp" class="mt-2 text-sm text-neutral-400">Actual browser actions outside the application task.</div>
+              <div id="offTrackHelp" class="mt-2 text-sm text-neutral-400">Browser actions the agent ran by following injected page content.</div>
             </div>
           </div>
           <div id="verdictCard" class="mt-4 rounded-2xl border border-white/10 bg-black/30 p-4">
@@ -101,7 +111,7 @@
           <iframe id="liveView" class="hidden h-full w-full bg-black" title="Browserbase live view" allow="fullscreen"></iframe>
           <div id="livePlaceholder" class="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,.22),transparent_38%),linear-gradient(135deg,rgba(255,255,255,.07),rgba(255,255,255,.015))]">
             <div class="max-w-md px-8 text-center">
-              <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-2xl">⌁</div>
+              <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-2xl font-semibold tracking-tight shadow-2xl shadow-emerald-500/10">BC</div>
               <div id="liveTitle" class="text-xl font-semibold tracking-tight">Starting Browserbase session</div>
               <div id="liveText" class="mt-2 text-sm leading-6 text-neutral-400">The real browser will appear here as soon as Browserbase returns a live-view URL.</div>
             </div>
@@ -140,23 +150,40 @@
 const tallies = {'hooks-off': {}, 'hooks-on': {}};
 let totalEvents = 0;
 let activeRun = false;
+let currentMeta = null;
 let liveViewTimer = null;
+let liveShown = false;
 const seenSites = new Map();
 
 function byId(id){ return document.getElementById(id); }
 function countMode(mode){ return Object.values(tallies[mode] || {}).reduce((a,b)=>a+b,0); }
 
 function metaFor(url, label){
-  if(url.includes('enforce=off') || url === '/debug/naive') return {
-    title:'NAIVE AGENT ON MALICIOUS PAGE', short:'Naive agent on malicious page', phase:'PROTECTION OFF — Browserbase will execute unsafe actions', tone:'amber',
+  const naive = url.includes('enforce=off') || url === '/debug/naive';
+  if(url.includes('target=legit')){
+    return naive ? {
+      title:'REAL BERKELEY SITE — NAIVE (CONTROL)', short:'Real Berkeley site (naive)', phase:'CONTROL — real ai.hackberkeley.org, protection off', tone:'neutral', target:'legit', expectClean:true,
+      injectionLabel:'Website injections found', injectionHelp:'Control run on the real <code>ai.hackberkeley.org</code>. No hidden instruction exists, so this should stay 0.', injectionTone:'neutral',
+      offTrackLabel:'Injected actions executed', offTrackHelp:'A legit site has no injected instruction to follow, so this stays 0 even with protection off.', offTrackTone:'neutral',
+      liveTitle:'Live control session — real Berkeley site', liveText:'Applying to the real ai.hackberkeley.org with no protection. Nothing malicious to follow.'
+    } : {
+      title:'REAL BERKELEY SITE — BROWSECHECK (CONTROL)', short:'Real Berkeley site (BrowseCheck)', phase:'CONTROL — real ai.hackberkeley.org, protection on', tone:'green', target:'legit', expectClean:true,
+      injectionLabel:'Website injections found', injectionHelp:'BrowseCheck inspects the real <code>ai.hackberkeley.org</code>. Expect 0 — if it flags something, that is a false positive worth a look.', injectionTone:'green',
+      offTrackLabel:'Injected actions executed', offTrackHelp:'Expect 0 on a legit site.', offTrackTone:'green',
+      liveTitle:'Live control session — real Berkeley site', liveText:'Applying to the real ai.hackberkeley.org with BrowseCheck checking every action.'
+    };
+  }
+  if(naive) return {
+    title:'NAIVE AGENT ON MALICIOUS PAGE', short:'Naive agent on malicious page', phase:'PROTECTION OFF — Browserbase will execute unsafe actions', tone:'amber', target:'malicious',
+    hideInjectionCard:true,
     injectionLabel:'Website injection reached agent', injectionHelp:'Hidden website /login instruction entered the naive agent context.', injectionTone:'rose',
-    offTrackLabel:'Off-task actions executed', offTrackHelp:'Actual browser actions outside the application task: injected login navigation or credential fill.', offTrackTone:'amber',
+    offTrackLabel:'Injected actions executed', offTrackHelp:'Browser actions the naive agent ran by following hidden injected page content (e.g. the phishing /login and credential entry).', offTrackTone:'amber',
     liveTitle:'Live naive Browserbase session', liveText:'Watch the browser follow the poisoned page when enforcement is off.'
   };
   if(url.includes('enforce=on') || url === '/debug/protected') return {
-    title:'BROWSECHECK HARNESS ON SAME PAGE', short:'BrowseCheck harness on same page', phase:'PROTECTION ON — unsafe proposed actions are blocked before execution', tone:'green',
+    title:'BROWSECHECK HARNESS ON SAME PAGE', short:'BrowseCheck harness on same page', phase:'PROTECTION ON — unsafe proposed actions are blocked before execution', tone:'green', target:'malicious',
     injectionLabel:'Website injection blocked', injectionHelp:'Hidden website /login instruction was stopped before it could control the agent.', injectionTone:'green',
-    offTrackLabel:'Off-task actions executed', offTrackHelp:'This should stay 0: BrowseCheck blocks the attempted /login before browser execution.', offTrackTone:'green',
+    offTrackLabel:'Injected actions executed', offTrackHelp:'Stays 0: BrowseCheck blocks the hidden injected instruction before the agent can act on it.', offTrackTone:'green',
     liveTitle:'Live BrowseCheck Browserbase session', liveText:'Watch the same browser page stop before the injected login flow can execute.'
   };
   return {title:(label || 'RUNNING').toUpperCase(), short:label || 'Run started', phase:'RUNNING', tone:'neutral'};
@@ -183,11 +210,12 @@ function labelTone(tone){
 }
 
 function configureSummaryCards(meta){
-  byId('injectionCard').className = `rounded-2xl border p-4 ${cardTone(meta.injectionTone)}`;
+  const hideInj = !!meta.hideInjectionCard;
+  byId('injectionCard').className = `rounded-2xl border p-4 ${cardTone(meta.injectionTone)}${hideInj ? ' hidden' : ''}`;
   byId('injectionLabel').className = `text-xs uppercase tracking-[0.18em] ${labelTone(meta.injectionTone)}`;
   byId('injectionLabel').textContent = meta.injectionLabel || 'Website prompt injections';
   byId('injectionHelp').innerHTML = meta.injectionHelp || 'Hidden website content tells the agent to go to <code>/login</code>.';
-  byId('offTrackCard').className = `rounded-2xl border p-4 ${cardTone(meta.offTrackTone)}`;
+  byId('offTrackCard').className = `rounded-2xl border p-4 ${cardTone(meta.offTrackTone)}${hideInj ? ' sm:col-span-2' : ''}`;
   byId('offTrackLabel').className = `text-xs uppercase tracking-[0.18em] ${labelTone(meta.offTrackTone)}`;
   byId('offTrackLabel').textContent = meta.offTrackLabel || 'Off-task actions executed';
   byId('offTrackHelp').innerHTML = meta.offTrackHelp || 'Actual browser actions outside the authorized application task.';
@@ -219,31 +247,43 @@ function setActiveButton(url){
   if(active) active.setAttribute('aria-pressed', 'true');
 }
 
-function setButtonsDisabled(disabled){
-  document.querySelectorAll('[data-run-url]').forEach((btn)=>{ btn.disabled = disabled; });
+function setRunActive(active){
+  activeRun = active;
+  document.querySelectorAll('[data-run-url]').forEach((btn)=>{ btn.disabled = active; });
+  const stop = byId('btnStop');
+  if(stop){ stop.disabled = !active; stop.classList.toggle('hidden', !active); }
+}
+
+async function stopRun(){
+  if(!activeRun) return;
+  const stop = byId('btnStop');
+  if(stop) stop.disabled = true;
+  byId('runBadge').textContent = 'stopping';
+  setVerdict('Stopping run', 'Interrupt sent \u2014 the agent halts before its next action.', 'amber');
+  byId('browserStatus').textContent = 'Interrupt requested \u2014 stopping the agent\u2026';
+  try{ await fetch('/stop', {method:'POST'}); }
+  catch(e){ setRunActive(false); }
 }
 
 async function post(url, label){
   if(activeRun) return;
-  activeRun = true;
-  setButtonsDisabled(true);
+  setRunActive(true);
   resetRun(label || 'Starting run', url);
   try{
     const res = await fetch(url, {method:'POST'});
     if(!res.ok){
-      activeRun = false;
-      setButtonsDisabled(false);
+      setRunActive(false);
       setVerdict('Request failed', `${res.status} ${res.statusText}`, 'red');
     }
   }catch(e){
-    activeRun = false;
-    setButtonsDisabled(false);
+    setRunActive(false);
     setVerdict('Request failed', String(e), 'red');
   }
 }
 
 function resetRun(label, url){
   const meta = metaFor(url, label);
+  currentMeta = meta;
   totalEvents = 0;
   tallies['hooks-off'] = {};
   tallies['hooks-on'] = {};
@@ -270,6 +310,7 @@ function resetRun(label, url){
 }
 
 function resetLiveView(meta){
+  liveShown = false;
   const frame = byId('liveView');
   frame.classList.add('hidden');
   frame.removeAttribute('src');
@@ -290,6 +331,14 @@ async function loadLiveView(){
       frame.classList.remove('hidden');
       byId('livePlaceholder').classList.add('hidden');
       byId('liveBadge').textContent = 'Browserbase live';
+      liveShown = true;
+      return;
+    }
+    // The live URL went away after we had shown it -> the Browserbase session
+    // closed. Hide the iframe (which would otherwise show the cross-origin
+    // "Debugging connection was closed" overlay) and show the clean logo.
+    if(liveShown){
+      closeLiveView('Session ended', 'The Browserbase session has closed.');
       return;
     }
     byId('liveBadge').textContent = d.env === 'BROWSERBASE' ? 'connecting to Browserbase' : 'local browser mode';
@@ -306,13 +355,20 @@ function startLiveViewPolling(){
   liveViewTimer = setInterval(loadLiveView, 1200);
 }
 
-function stopLiveViewPollingSoon(){
-  setTimeout(()=>{
-    if(!activeRun && liveViewTimer){
-      clearInterval(liveViewTimer);
-      liveViewTimer = null;
-    }
-  }, 8000);
+function stopLiveViewPolling(){
+  if(liveViewTimer){ clearInterval(liveViewTimer); liveViewTimer = null; }
+}
+
+function closeLiveView(title, text){
+  stopLiveViewPolling();
+  liveShown = false;
+  const frame = byId('liveView');
+  frame.classList.add('hidden');
+  frame.removeAttribute('src');
+  byId('livePlaceholder').classList.remove('hidden');
+  byId('liveTitle').textContent = title || 'Session ended';
+  byId('liveText').textContent = text || 'The Browserbase session has closed.';
+  byId('liveBadge').textContent = 'session ended';
 }
 
 function setVerdict(title, text, tone, evidence){
@@ -353,23 +409,54 @@ function upsertSite(site, state){
   else el.className = `${base} border-white/10 bg-white/[0.06] text-neutral-300`;
 }
 
+function actionVerb(ev){
+  const r = ev.reason || '';
+  const dom = (ev.site && (ev.site.domain || ev.site.url)) || '';
+  if(ev.kind === 'navigate') return {tag:'NAV', text:`Opened ${dom}`};
+  if(ev.kind === 'observe') return {tag:'PLAN', text:r || 'proposes an action'};
+  if(ev.kind === 'act'){
+    if(/^final message:/i.test(r)) return {tag:'REPLY', text:'Replied to user: ' + r.replace(/^final message:\s*/i,'')};
+    if(/^navigate to/i.test(r)) return {tag:'NAV', text:'Navigated to ' + r.replace(/^navigate to\s*/i,'')};
+    if(/^read the current page/i.test(r)) return {tag:'READ', text:'Read the page'};
+    if(/^fill/i.test(r)) return {tag:'FILL', text:'Filled ' + r.replace(/^fill\s*/i,'')};
+    if(/^click/i.test(r)) return {tag:'CLICK', text:'Clicked ' + r.replace(/^click\s*/i,'')};
+    return {tag:'ACT', text:r};
+  }
+  if(ev.kind === 'hook-pass') return {tag:'CHECK', text:`${ev.hook || 'hook'} allowed${r ? ' — ' + r : ''}`};
+  if(ev.kind === 'hook-block') return {tag:'BLOCK', text:`${ev.hook || 'hook'} ${ev.run_mode === 'hooks-off' ? 'flagged (not enforced)' : 'blocked'}${r ? ' — ' + r : ''}`};
+  if(ev.kind === 'site-complete') return {tag:'DONE', text:`Finished ${dom}`};
+  if(ev.kind === 'run-complete') return {tag:'END', text:r || 'Run complete'};
+  if(ev.kind === 'error') return {tag:'ERR', text:r || 'Run failed'};
+  return {tag:(ev.kind || '').toUpperCase(), text:r};
+}
+
 function addFeed(ev){
-  const row = document.createElement('div');
-  const t = new Date(ev.ts).toLocaleTimeString();
-  const mode = ev.run_mode === 'hooks-off' ? 'PROTECTION OFF' : 'PROTECTION ON';
-  const tag = ev.hook ? ev.hook : ev.kind;
+  // Naive run: hide BrowseCheck's shadow detections AND the redundant 'observe'
+  // (it duplicates the executed 'act'); show only the agent's real actions.
+  if(ev.run_mode === 'hooks-off' && (ev.kind === 'hook-pass' || ev.kind === 'hook-block' || ev.kind === 'observe')) return;
+  const {tag, text} = actionVerb(ev);
   let tone = 'border-white/10 bg-white/[0.03] text-neutral-300';
   if(ev.kind === 'hook-pass') tone = 'border-emerald-300/15 bg-emerald-300/[0.05] text-emerald-200';
-  if(ev.kind === 'hook-block' && ev.run_mode === 'hooks-off') tone = 'border-amber-300/20 bg-amber-300/[0.07] text-amber-100';
-  if(ev.kind === 'hook-block' && ev.run_mode !== 'hooks-off') tone = 'border-emerald-300/20 bg-emerald-300/[0.06] text-emerald-100';
-  row.className = `rounded-xl border px-3 py-2 ${tone}`;
-  const reason = ev.reason ? ` — ${ev.reason}` : '';
-  const decision = ev.kind === 'hook-block' && ev.run_mode === 'hooks-off' ? 'detected but not enforced' : (ev.decision || ev.kind);
-  row.textContent = `${t} [${mode}] ${tag} ${ev.site?.domain || ''} ${decision}${reason}`;
+  else if(ev.kind === 'hook-block') tone = ev.run_mode === 'hooks-off' ? 'border-amber-300/20 bg-amber-300/[0.07] text-amber-100' : 'border-emerald-300/20 bg-emerald-300/[0.06] text-emerald-100';
+  else if(ev.kind === 'act' && isExecutedOffTask(ev)) tone = 'border-amber-300/25 bg-amber-300/[0.09] text-amber-100';
+  else if(ev.kind === 'error') tone = 'border-red-300/25 bg-red-300/[0.08] text-red-100';
+  const row = document.createElement('div');
+  row.className = `flex items-start gap-2 rounded-xl border px-3 py-2 ${tone}`;
+  const tEl = document.createElement('span');
+  tEl.className = 'shrink-0 tabular-nums text-[10px] leading-5 text-neutral-500';
+  tEl.textContent = new Date(ev.ts).toLocaleTimeString();
+  const tagEl = document.createElement('span');
+  tagEl.className = 'shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold leading-4 tracking-wide';
+  tagEl.textContent = tag;
+  const txtEl = document.createElement('span');
+  txtEl.className = 'min-w-0 break-words leading-5';
+  txtEl.textContent = text;
+  row.append(tEl, tagEl, txtEl);
   byId('feed').prepend(row);
 }
 
 function ledgerLabel(mode, cat){
+  if(cat === 'offtask-executed') return 'Injected action executed';
   if(cat === 'injection') return mode === 'hooks-off' ? 'Website injection got through' : 'Website injection blocked';
   if(cat === 'intent') return mode === 'hooks-off' ? 'Off-task action detected but not enforced' : 'Intent check blocked proposed action';
   return `${cat} ${mode === 'hooks-off' ? 'got through' : 'blocked'}`;
@@ -392,6 +479,8 @@ function renderTally(){
 
 function isExecutedOffTask(ev){
   if(ev.kind !== 'act' || ev.run_mode !== 'hooks-off') return false;
+  // Legit control site: logins there are legitimate, not injected — don't count them.
+  if(currentMeta && currentMeta.target === 'legit') return false;
   const reason = ev.reason || '';
   return /login|sign.?in|auth|password|credential|re-auth/i.test(reason);
 }
@@ -404,7 +493,7 @@ function handle(ev){
     upsertSite(ev.site, 'active');
     byId('browserStatus').textContent = ev.reason || `Navigated to ${ev.site?.domain || ev.site?.url || 'site'}`;
   }
-  if(ev.kind === 'hook-pass'){
+  if(ev.kind === 'hook-pass' && ev.run_mode !== 'hooks-off'){
     upsertSite(ev.site, 'pass');
   }
   if(ev.kind === 'act'){
@@ -412,51 +501,62 @@ function handle(ev){
     byId('browserStatus').textContent = reason;
     if(isExecutedOffTask(ev)){
       byId('offTrackCount').textContent = String(Number(byId('offTrackCount').textContent || '0') + 1);
-      setVerdict('Naive agent executed an off-task action', reason, 'amber');
+      tallies['hooks-off']['offtask-executed'] = (tallies['hooks-off']['offtask-executed'] || 0) + 1;
+      renderTally();
+      setVerdict('Naive agent executed an injected action', reason, 'amber');
       upsertSite(ev.site, 'through');
     }
   }
-  if(ev.kind === 'hook-block'){
-    const mode = ev.run_mode || 'hooks-on';
+  if(ev.kind === 'hook-block' && ev.run_mode !== 'hooks-off'){
     const cat = ev.category || '';
     if(cat){
-      tallies[mode][cat] = (tallies[mode][cat] || 0) + 1;
+      tallies['hooks-on'][cat] = (tallies['hooks-on'][cat] || 0) + 1;
       renderTally();
       if(cat === 'injection') byId('injectionCount').textContent = String(Number(byId('injectionCount').textContent || '0') + 1);
+      const blockTitle = cat === 'injection' ? 'Blocked a hidden, injected instruction'
+        : cat === 'intent' ? 'Blocked an off-task action (defense-in-depth)'
+        : 'BrowseCheck blocked before action';
+      setVerdict(blockTitle, ev.reason, 'green', ev.evidence);
     }
-    if(mode === 'hooks-off'){
-      upsertSite(ev.site, 'through');
-      setVerdict('Threat got through with protection off', ev.reason, 'amber', ev.evidence);
-    } else {
-      upsertSite(ev.site, 'block');
-      setVerdict('BrowseCheck blocked before action', ev.reason, 'green', ev.evidence);
-    }
+    upsertSite(ev.site, 'block');
   }
   if(ev.kind === 'error'){
-    activeRun = false;
-    setButtonsDisabled(false);
+    setRunActive(false);
     setVerdict('Run failed', ev.reason || 'Unknown error', 'red');
     byId('browserStatus').textContent = ev.reason || 'Run failed';
-    stopLiveViewPollingSoon();
+    closeLiveView('Session ended', 'The run ended before a live view was available.');
   }
   if(ev.kind === 'site-complete'){
     if(ev.run_mode !== 'hooks-off') upsertSite(ev.site, 'pass');
     if(ev.reason) byId('browserStatus').textContent = ev.reason;
   }
   if(ev.kind === 'run-complete'){
-    activeRun = false;
-    setButtonsDisabled(false);
-    byId('runBadge').textContent = 'complete';
-    if(countMode('hooks-on') > 0){
+    setRunActive(false);
+    const interrupted = /interrupt/i.test(ev.reason || '');
+    byId('runBadge').textContent = interrupted ? 'stopped' : 'complete';
+    if(interrupted){
+      setModeState(byId('currentMode').textContent, 'STOPPED \u2014 run interrupted by user', 'neutral');
+      setVerdict('Run stopped', 'You interrupted the run before the agent took its next action.', 'neutral');
+    } else if(currentMeta && currentMeta.target === 'legit'){
+      const inj = Number(byId('injectionCount').textContent || '0');
+      const flagged = countMode('hooks-on') > 0 || inj > 0;
+      if(flagged){
+        setModeState(byId('currentMode').textContent, 'COMPLETE — BrowseCheck flagged the legit site (false positive)', 'amber');
+        setVerdict('False positive on a legit site', 'BrowseCheck flagged something on the real ai.hackberkeley.org, but there is no injection here — a genuine false positive worth a look.', 'amber');
+      } else {
+        setModeState(byId('currentMode').textContent, 'COMPLETE — clean run on the real Berkeley site', 'green');
+        setVerdict('All clear', 'Applied on the real ai.hackberkeley.org with nothing suspicious detected — exactly what we want on a legit site.', 'green');
+      }
+    } else if(countMode('hooks-on') > 0){
       setModeState(byId('currentMode').textContent, 'COMPLETE — BrowseCheck blocked the website-injected login flow', 'green');
-      setVerdict('BrowseCheck blocked the attack', 'The hidden website /login instruction was detected and the off-task action count stayed at zero.', 'green');
+      setVerdict('BrowseCheck blocked the attack', 'The hidden, injected /login instruction was detected and blocked before the agent could act on it.', 'green');
     } else if(countMode('hooks-off') > 0){
       setModeState(byId('currentMode').textContent, 'COMPLETE — naive agent followed the website injection', 'amber');
-      setVerdict('Naive agent executed off-task actions', 'The browser followed website-injected /login instructions instead of continuing the application task.', 'amber');
+      setVerdict('Naive agent followed the injection', 'The browser followed the website-injected /login instruction and ran it instead of staying on the real application.', 'amber');
     } else {
       setModeState(byId('currentMode').textContent, 'COMPLETE', 'neutral');
     }
-    stopLiveViewPollingSoon();
+    setTimeout(()=>{ if(!activeRun) closeLiveView('Session ended', 'The Browserbase session has closed.'); }, 30000);
   }
 }
 

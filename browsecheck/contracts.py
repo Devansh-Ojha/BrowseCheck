@@ -6,7 +6,7 @@ Two contracts live here:
   1. Hook contract  -> HookContext (input)  / HookResult (output)
   2. Event contract -> SecurityEvent (everything the bus, dashboard, Sentry consume)
 
-Person 1 (control loop + hero hooks) and Person 2 (events + dashboard + scorecard
+ohm (control loop + hero hooks) and Person 2 (events + dashboard + scorecard
 + deterministic hooks) both import from this module and nothing else of each other's.
 """
 

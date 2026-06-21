@@ -1,4 +1,4 @@
-"""HERO HOOK 1 — Prompt-injection scan. OWNER: Person 1. Build FIRST.
+"""HERO HOOK 1 — Prompt-injection scan. OWNER: ohm. Build FIRST.
 
 Detects hidden/adversarial instructions aimed at the agent:
   - invisible / off-screen text (hidden-vs-rendered mismatch)

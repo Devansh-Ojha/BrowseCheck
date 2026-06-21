@@ -1,4 +1,4 @@
-"""Browser executor: the agent loop's hands. OWNER: Person 1.
+"""Browser executor: the agent loop's hands. OWNER: ohm.
 
 We OWN the agent loop (see `controlloop/loop.py`) via the Anthropic tool-use API
 and execute its proposed tool calls here, over CDP with Playwright — connected to

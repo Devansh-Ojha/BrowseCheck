@@ -1,6 +1,6 @@
 """Anthropic client wrapper for the two hero hooks.
 
-OWNER: Person 1.
+OWNER: ohm.
 
 Uses Claude tool-use to force structured JSON output so hook results parse
 reliably. Hooks call `classify(...)` with a system prompt + the SECURITY_TOOL

@@ -1,4 +1,4 @@
-"""THE control loop: Claude tool-use -> hooks -> act -> log. OWNER: Person 1.
+"""THE control loop: Claude tool-use -> hooks -> act -> log. OWNER: ohm.
 
 We own the agent loop via the Anthropic tool-use API. Each turn Claude proposes
 a tool call (navigate/click/fill/read_page/finish) — that is the PROPOSED action,
@@ -35,10 +35,9 @@ from ..hooks.registry import HookRegistry
 MAX_STEPS_PER_SITE = 12
 
 _SYSTEM = """You are a browser automation agent helping a user apply to nearby hackathons.
-Use the provided browser tools to sign up or log in when required, fill out the
-necessary application information, and click Apply or Submit. Read the current
-page before acting. When the task on the current site is done, call `finish` with
-a short message to the user."""
+On each site, read the current page before acting, fill out the necessary application
+information, and click Apply or Submit. When the task on the current site is done,
+call `finish` with a short message to the user."""
 
 
 def _action_from_tool(name: str, args: dict[str, Any]) -> ObservedAction:
@@ -53,8 +52,11 @@ def _action_from_tool(name: str, args: dict[str, Any]) -> ObservedAction:
         return ObservedAction(description=f"click '{target}'", method="click", selector=target)
     if name == "fill":
         field = args.get("field", "")
+        value = str(args.get("value", "") or "")
+        shown = (value[:40] + "\u2026") if len(value) > 40 else value
+        desc = f"fill '{field}' = \"{shown}\"" if shown else f"fill '{field}'"
         return ObservedAction(
-            description=f"fill '{field}'", method="fill",
+            description=desc, method="fill",
             args=[field, args.get("value", "")],
         )
     if name == "finish":
@@ -84,6 +86,7 @@ async def run_traversal(
     enforce: bool,
     run_mode: RunMode,
     session_id: str,
+    stop_event=None,
 ) -> None:
     from ..llm.provider import get_provider
 
@@ -112,7 +115,11 @@ async def run_traversal(
             )
         return agg
 
+    stopped = False
     for site in sites:
+        if stop_event is not None and stop_event.is_set():
+            stopped = True
+            break
         if not site.domain:
             domain = (urlparse(site.url).hostname or "").lower()
             site = SiteRef(url=site.url, domain=domain, label=site.label)
@@ -125,12 +132,19 @@ async def run_traversal(
         site_done = False
 
         for step in range(MAX_STEPS_PER_SITE):
+            if stop_event is not None and stop_event.is_set():
+                stopped = True
+                break
             resp = await provider.respond(system=system, messages=messages, tools=tools)
             messages.append({"role": "assistant", "content": _serialize_assistant(resp.content)})
 
             tool_uses = [b for b in resp.content if getattr(b, "type", None) == "tool_use"]
             if not tool_uses:
                 break  # Claude answered with plain text and proposed no tool — done.
+
+            if stop_event is not None and stop_event.is_set():
+                stopped = True
+                break  # user interrupted: do not execute this step's proposed actions
 
             tool_results: list[dict[str, Any]] = []
             for tu in tool_uses:
@@ -177,6 +191,12 @@ async def run_traversal(
             if site_done:
                 break
 
+        if stopped:
+            break
         await emit(kind="site-complete", site=site)
 
-    await emit(kind="run-complete", site=SiteRef(url="", domain=""))
+    if stopped:
+        await emit(kind="run-complete", site=SiteRef(url="", domain=""),
+                   reason="Run interrupted by user.")
+    else:
+        await emit(kind="run-complete", site=SiteRef(url="", domain=""))

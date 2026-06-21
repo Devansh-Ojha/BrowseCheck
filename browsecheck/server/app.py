@@ -31,6 +31,7 @@ _FIXTURES = _ROOT / "tests" / "fixtures"
 _last_scorecard: dict = {}
 _live_view: dict = {"url": "", "env": _settings.env}
 _tasks: set = set()  # ponytail: keep refs so tasks don't get GC'd
+_stop_event = asyncio.Event()  # cooperative interrupt for the active live run
 
 # Recorded fallback — pre-baked result shown on stage if live scorecard fails.
 _RECORDED_SCORECARD: dict = {
@@ -144,6 +145,7 @@ async def run(enforce: str = "on", target: str = "all") -> JSONResponse:
     """
     run_mode = "hooks-on" if enforce == "on" else "hooks-off"
     _live_view["url"] = ""  # reset; refreshed once the session connects
+    _stop_event.clear()  # arm a fresh interrupt for this run
 
     async def _run() -> None:
         from ..contracts import SecurityEvent, SiteRef, new_id
@@ -154,9 +156,15 @@ async def run(enforce: str = "on", target: str = "all") -> JSONResponse:
             from ..browser.session import BrowserSession
             from ..controlloop.loop import run_traversal
             from ..hooks.factory import build_registry
-            from ..tasks.demo_task import USER_TASK, demo_sites, malicious_sites
+            from ..tasks.demo_task import USER_TASK, demo_sites, legit_sites, malicious_sites
 
             protected = enforce == "on"
+            if target == "malicious":
+                sites = malicious_sites()
+            elif target == "legit":
+                sites = legit_sites()
+            else:
+                sites = demo_sites()
             session = BrowserSession(expose_hidden_surfaces=not protected)
             await session.start()
             if _settings.is_browserbase:
@@ -166,14 +174,16 @@ async def run(enforce: str = "on", target: str = "all") -> JSONResponse:
                 await run_traversal(
                     session, build_registry(),
                     user_task=USER_TASK,
-                    sites=malicious_sites() if target == "malicious" else demo_sites(),
+                    sites=sites,
                     enforce=protected, run_mode=run_mode,
                     session_id=session_id,
+                    stop_event=_stop_event,
                 )
             finally:
                 if _settings.is_browserbase:
                     await asyncio.sleep(15)
                 await session.close()
+                _live_view["url"] = ""  # session closed -> dashboard shows the clean logo
         except Exception as exc:  # noqa: BLE001 — show the failure on the feed
             await event_bus.publish(SecurityEvent(
                 session_id=session_id, run_mode=run_mode,
@@ -185,6 +195,17 @@ async def run(enforce: str = "on", target: str = "all") -> JSONResponse:
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
     return JSONResponse({"status": "started", "mode": "live", "enforce": enforce, "target": target})
+
+
+@app.post("/stop")
+async def stop() -> JSONResponse:
+    """Cooperatively interrupt the active live run before its next action.
+
+    The control loop checks this event between steps and emits a `run-complete`
+    event (reason: interrupted) so the dashboard resets cleanly.
+    """
+    _stop_event.set()
+    return JSONResponse({"status": "stopping"})
 
 
 @app.get("/scorecard")

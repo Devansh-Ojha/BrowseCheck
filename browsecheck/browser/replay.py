@@ -1,4 +1,4 @@
-"""Browserbase Live View URL helper for the dashboard iframe. OWNER: Person 1.
+"""Browserbase Live View URL helper for the dashboard iframe. OWNER: ohm.
 
 The dashboard embeds the live session so the audience watches the agent browse.
 Pass `BrowserSession.session_id` (set in `_create_browserbase_session()`).

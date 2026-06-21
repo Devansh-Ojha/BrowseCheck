@@ -1,4 +1,4 @@
-"""Deterministic extraction of injection 'surfaces'. OWNER: Person 1.
+"""Deterministic extraction of injection 'surfaces'. OWNER: ohm.
 
 A surface is text that lives in the DOM but a human does not normally see — so
 only the agent reads it — together with the ELEMENT it is stored in. This lets

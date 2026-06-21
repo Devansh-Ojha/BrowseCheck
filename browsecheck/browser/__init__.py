@@ -1,1 +1,1 @@
-"""Stagehand/Browserbase session wrapper. OWNER: Person 1."""
+"""Stagehand/Browserbase session wrapper. OWNER: ohm."""
