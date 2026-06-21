@@ -1,6 +1,6 @@
 # BrowseCheck
 
-Runtime security layer for AI browser agents. **Prevention, not observation:**
+Security layer for browser agents. **Prevention, not observation:**
 every proposed agent action is gated by a hook pipeline *before* it executes
 (`observe -> hooks -> act`). Runs on Browserbase via Stagehand; threats surface
 live on a dashboard with a before/after scorecard.
