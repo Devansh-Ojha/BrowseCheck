@@ -275,9 +275,14 @@ class BrowserSession:
         )
 
     async def close(self) -> None:
+        # Idempotent: null the refs first so a second call (hard stop + run
+        # finally) is a harmless no-op instead of a double-close error.
+        browser, self._browser = self._browser, None
+        pw, self._pw = self._pw, None
+        self.page = None
         try:
-            if self._browser is not None:
-                await self._browser.close()
+            if browser is not None:
+                await browser.close()
         finally:
-            if self._pw is not None:
-                await self._pw.stop()
+            if pw is not None:
+                await pw.stop()

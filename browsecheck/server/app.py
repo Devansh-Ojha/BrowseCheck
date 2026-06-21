@@ -36,6 +36,10 @@ _live_view: dict = {"url": "", "env": _settings.env}
 _tasks: set = set()  # ponytail: keep refs so tasks don't get GC'd
 _stop_event = asyncio.Event()  # cooperative interrupt for the active live run
 _run_active: bool = False  # guard so only one live run executes at a time
+_active_task: "asyncio.Task | None" = None  # current live run task (cancelled on hard stop)
+_active_session = None  # current BrowserSession (closed immediately on hard stop)
+_active_run_meta: dict = {"session_id": "", "run_mode": "hooks-off"}  # for the interrupted event
+_stop_requested: bool = False  # set by /stop so the run skips its linger + cleanup awaits
 
 # Recorded fallback — pre-baked result shown on stage if live scorecard fails.
 _RECORDED_SCORECARD: dict = {
@@ -142,33 +146,35 @@ async def debug_suspicious() -> JSONResponse:
 
 @app.post("/run")
 async def run(enforce: str = "on", target: str = "all") -> JSONResponse:
-    global _run_active
+    global _run_active, _active_task, _active_session, _stop_requested
     if _run_active:
         return JSONResponse({"error": "run already in progress"}, status_code=409)
 
     run_mode = "hooks-on" if enforce == "on" else "hooks-off"
     _live_view["url"] = ""  # reset; refreshed once the session connects
     _stop_event.clear()  # arm a fresh interrupt for this run
+    _stop_requested = False  # clear any prior hard-stop request
+    _active_session = None
 
     async def _run() -> None:
-        global _run_active
+        global _run_active, _active_session
         _run_active = True
         from ..contracts import SecurityEvent, SiteRef, new_id
         from ..events.bus import event_bus
 
         session_id = new_id()
+        _active_run_meta["session_id"] = session_id
+        _active_run_meta["run_mode"] = run_mode
+        session = None
         try:
             from ..browser.session import BrowserSession
             from ..controlloop.loop import run_traversal
             from ..hooks.factory import build_registry
             from ..tasks.demo_task import (
-                SHOPPING_SYSTEM,
-                SHOPPING_TASK,
                 USER_TASK,
                 demo_sites,
                 legit_sites,
                 malicious_sites,
-                shopping_sites,
             )
 
             protected = enforce == "on"
@@ -178,14 +184,11 @@ async def run(enforce: str = "on", target: str = "all") -> JSONResponse:
                 sites = malicious_sites()
             elif target == "legit":
                 sites = legit_sites()
-            elif target == "ebay":
-                sites = shopping_sites()
-                user_task = SHOPPING_TASK
-                system = SHOPPING_SYSTEM
             else:
                 sites = demo_sites()
             session = BrowserSession(expose_hidden_surfaces=not protected)
             await session.start()
+            _active_session = session  # expose for hard stop via /stop
             if _settings.is_browserbase:
                 from ..browser.replay import live_view_url
                 _live_view["url"] = await live_view_url(session.session_id) or ""
@@ -200,20 +203,29 @@ async def run(enforce: str = "on", target: str = "all") -> JSONResponse:
                     system=system,
                 )
             finally:
-                if _settings.is_browserbase:
-                    await asyncio.sleep(15)
-                await session.close()
+                # On a hard stop, /stop already closed the session and we must
+                # skip the linger; awaiting here would fight the cancellation.
+                if not _stop_requested:
+                    if _settings.is_browserbase:
+                        await asyncio.sleep(15)
+                    if session is not None:
+                        await session.close()
                 _live_view["url"] = ""  # session closed -> dashboard shows the clean logo
+        except asyncio.CancelledError:
+            pass  # hard-stopped via /stop; session teardown handled there
         except Exception as exc:  # noqa: BLE001 — show the failure on the feed
-            await event_bus.publish(SecurityEvent(
-                session_id=session_id, run_mode=run_mode,
-                site=SiteRef(url="", domain=""), kind="error",
-                reason=f"run failed: {exc}",
-            ))
+            if not _stop_requested:
+                await event_bus.publish(SecurityEvent(
+                    session_id=session_id, run_mode=run_mode,
+                    site=SiteRef(url="", domain=""), kind="error",
+                    reason=f"run failed: {exc}",
+                ))
         finally:
             _run_active = False
+            _active_session = None
 
     task = asyncio.create_task(_run())
+    _active_task = task
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
     return JSONResponse({"status": "started", "mode": "live", "enforce": enforce, "target": target})
@@ -221,13 +233,44 @@ async def run(enforce: str = "on", target: str = "all") -> JSONResponse:
 
 @app.post("/stop")
 async def stop() -> JSONResponse:
-    """Cooperatively interrupt the active live run before its next action.
+    """Hard-abort the active live run.
 
-    The control loop checks this event between steps and emits a `run-complete`
-    event (reason: interrupted) so the dashboard resets cleanly.
+    Cancels the in-flight run task (interrupting whatever it is awaiting — an
+    LLM call or a browser action), closes the Browserbase/Chromium session
+    immediately, skips the post-run linger, and emits a `run-complete`
+    (interrupted) event so the dashboard resets cleanly.
     """
-    _stop_event.set()
-    return JSONResponse({"status": "stopping"})
+    global _stop_requested
+    if not _run_active:
+        return JSONResponse({"status": "idle"})
+
+    from ..contracts import SecurityEvent, SiteRef
+    from ..events.bus import event_bus
+
+    _stop_requested = True
+    _stop_event.set()  # cooperative fallback for the control loop
+
+    task = _active_task
+    session = _active_session
+
+    # Interrupt whatever the run is currently awaiting (LLM call or browser op).
+    if task is not None and not task.done():
+        task.cancel()
+    # Tear down the browser session now so any in-flight page action aborts.
+    if session is not None:
+        try:
+            await session.close()
+        except Exception:  # noqa: BLE001 — best-effort teardown
+            pass
+
+    _live_view["url"] = ""
+    await event_bus.publish(SecurityEvent(
+        session_id=_active_run_meta.get("session_id", ""),
+        run_mode=_active_run_meta.get("run_mode", "hooks-off"),
+        site=SiteRef(url="", domain=""), kind="run-complete",
+        reason="Run interrupted by user.",
+    ))
+    return JSONResponse({"status": "stopped"})
 
 
 @app.get("/scorecard")

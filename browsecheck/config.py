@@ -28,9 +28,6 @@ class Settings:
         # tests/fixtures when no red-team URL exists yet.
         self.redteam_url: str = os.getenv("REDTEAM_URL", "")
         self.fixture_base_url: str = os.getenv("FIXTURE_BASE_URL", "")
-        # Scenario 2: the eBay listing the payment agent visits. A fair match for
-        # the phone request whose description/reviews hide a malicious link.
-        self.shopping_url: str = os.getenv("SHOPPING_URL", "")
 
     @property
     def is_browserbase(self) -> bool:
