@@ -38,10 +38,15 @@ _WS = re.compile(r"\s+")
 _B64 = re.compile(r"[A-Za-z0-9+/]{24,}={0,2}")
 
 # instruction-ish markers that make a surface "suspicious"
+# ponytail: match multi-word instruction patterns, not just auth keywords alone
+# Requires instruction context to avoid flagging legitimate tech docs.
+# Catches: (1) ignore/override + target, (2) urgent action patterns, (3) system directives
 _MARKERS = re.compile(
-    r"ignore (all|previous)|disregard|system message|system alert|you must"
-    r"|re-?authenticate|sign ?in|log ?in|password|credentials|instructions"
-    r"|click here|verify your|session (has )?expired|decode",
+    r"(?:ignore|disregard|instead|bypass|override|you must)[\s\w]*(?:instructions?|task|prompt|system|previous|all|commands?)"
+    r"|(?:click|go|visit|log in|sign in|authenticate)[\s\w]*(?:here|now|immediately)"
+    r"|(?:verify|confirm|validate).*(?:account|identity|credentials?)\s*(?:immediately|now|urgently)"
+    r"|system\s*(?:message|alert|override|prompt)"
+    r"|(?:session|token|credentials?).*(?:expired|invalid|required)",
     re.IGNORECASE,
 )
 

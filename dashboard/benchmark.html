@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PINT Benchmark — BrowseCheck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html { font-family: 'Inter', system-ui, sans-serif; scroll-behavior: smooth; }
+    body { -webkit-font-smoothing: antialiased; }
+
+    .blob { position: fixed; border-radius: 50%; filter: blur(90px); pointer-events: none; z-index: 0; }
+    .blob-1 { width: 700px; height: 550px; top: -180px; left: -150px; background: rgba(16,185,129,.08); }
+    .blob-2 { width: 500px; height: 400px; top: 40%; right: -150px; background: rgba(52,211,153,.06); }
+
+    .gradient-text {
+      background: linear-gradient(120deg, #065f46 0%, #059669 50%, #10b981 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+
+    .metric-card { transition: transform .2s ease, box-shadow .2s ease; }
+    .metric-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(16,185,129,0.15); }
+
+    .score-ring {
+      width: 200px; height: 200px; border-radius: 50%;
+      background: conic-gradient(#10b981 0deg, #10b981 var(--rotation), #f3f4f6 var(--rotation));
+      display: flex; align-items: center; justify-content: center;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-white text-slate-900">
+
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+
+  <!-- NAV -->
+  <header class="relative z-50 border-b border-emerald-100/80 bg-white/90 backdrop-blur-xl sticky top-0">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+      <div class="flex items-center gap-3">
+        <a href="/" class="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-emerald-200 bg-emerald-50 text-sm font-black italic text-emerald-600 shadow-sm">BC</a>
+        <a href="/" class="gradient-text text-2xl font-black italic">BrowseCheck</a>
+      </div>
+      <nav class="flex gap-6">
+        <a href="/" class="text-sm font-semibold text-slate-600 hover:text-emerald-600">Home</a>
+        <a href="/benchmark.html" class="text-sm font-semibold text-emerald-600 border-b-2 border-emerald-600">Benchmark</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="relative z-10 px-6 py-20">
+    <div class="mx-auto max-w-5xl">
+      <div class="mb-8">
+        <p class="mb-2 text-xs font-semibold uppercase tracking-[.28em] text-emerald-600">PINT Benchmark</p>
+        <h1 class="text-5xl font-black text-slate-900">
+          Agent performance on <span class="gradient-text">prompt injection detection</span>
+        </h1>
+        <p class="mt-4 text-lg text-slate-500 max-w-xl">
+          How well does BrowseCheck detect hidden, malicious instructions injected into web pages? Here's how it performs on the Lakera PINT Benchmark — a comprehensive, real-world dataset.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section class="relative z-10 px-6 py-12">
+    <div class="mx-auto max-w-5xl">
+      <!-- Score card -->
+      <div id="scoreCard" class="mb-12 rounded-3xl border border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-white p-10 shadow-lg">
+        <div class="grid gap-12 items-center lg:grid-cols-2">
+          <!-- Ring -->
+          <div class="flex justify-center">
+            <div class="score-ring" id="scoreRing" style="--rotation: 360deg;">
+              <div class="text-center">
+                <p id="scoreValue" class="text-6xl font-black text-emerald-600">—</p>
+                <p class="text-sm text-slate-500 mt-1">balanced accuracy</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Details -->
+          <div>
+            <div class="mb-6">
+              <p id="modelName" class="text-3xl font-bold text-slate-900">Loading...</p>
+              <p id="resultDate" class="text-sm text-slate-500 mt-1">—</p>
+            </div>
+            <div class="space-y-3">
+              <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs font-semibold uppercase tracking-[.2em] text-slate-600">What this means</p>
+                <p class="text-sm text-slate-600 mt-2">BrowseCheck uses Claude to detect hidden instructions in web pages with balanced accuracy (same weight for true positives and true negatives).</p>
+              </div>
+              <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs font-semibold uppercase tracking-[.2em] text-slate-600">PINT Dataset</p>
+                <p class="text-sm text-slate-600 mt-2">4,314 inputs: 5.2% prompt injections, 0.9% jailbreaks, 93.9% benign. Multi-language (English + 20+ others).</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Per-category breakdown -->
+      <div class="mb-12">
+        <h2 class="text-2xl font-bold text-slate-900 mb-6">Performance by category</h2>
+        <div id="categoryGrid" class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <!-- Filled by JS -->
+        </div>
+      </div>
+
+      <!-- Results table -->
+      <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div class="border-b border-slate-100 px-6 py-4">
+          <p class="text-sm font-semibold text-slate-900">Detailed results</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="border-b border-slate-100 bg-slate-50">
+              <tr>
+                <th class="px-6 py-3 text-left font-semibold text-slate-700">Category</th>
+                <th class="px-6 py-3 text-left font-semibold text-slate-700">Type</th>
+                <th class="px-6 py-3 text-right font-semibold text-slate-700">Accuracy</th>
+                <th class="px-6 py-3 text-right font-semibold text-slate-700">Correct</th>
+                <th class="px-6 py-3 text-right font-semibold text-slate-700">Total</th>
+              </tr>
+            </thead>
+            <tbody id="resultsTable" class="divide-y divide-slate-100">
+              <tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Loading results...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Info -->
+      <div class="mt-12 rounded-2xl border border-slate-200 bg-slate-50 p-6">
+        <p class="text-xs font-semibold uppercase tracking-[.2em] text-slate-600 mb-3">About the benchmark</p>
+        <div class="space-y-2 text-sm text-slate-600">
+          <p><strong>Lakera PINT Benchmark:</strong> A neutral evaluation of prompt injection detection systems. Not trained on the PINT dataset to avoid overfitting.</p>
+          <p><strong>BrowseCheck approach:</strong> Uses Claude with a targeted system prompt to detect prompt injections. Designed for agent browser security.</p>
+          <p><strong>Score calculation:</strong> Balanced accuracy = mean of accuracy on positive and negative examples (avoids bias toward the more common class).</p>
+          <p><a href="https://www.lakera.ai/" target="_blank" class="text-emerald-600 font-semibold hover:text-emerald-700">Learn more about PINT →</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-slate-100 px-6 py-12 text-center text-sm text-slate-500">
+    <p>BrowseCheck — Agent runtime firewall. <a href="https://github.com/Ohm-Rajpal/BrowseCheck" target="_blank" class="text-emerald-600 hover:text-emerald-700">View on GitHub</a></p>
+  </footer>
+
+<script>
+async function loadResults() {
+  const paths = [
+    '../pint-benchmark/results.json',
+    '/pint-benchmark/results.json',
+    './pint-benchmark/results.json',
+    'pint-benchmark/results.json'
+  ];
+
+  for (const path of paths) {
+    try {
+      const res = await fetch(path, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        renderResults(data);
+        return;
+      }
+    } catch (err) {
+      // Try next path
+    }
+  }
+
+  // None found
+  document.getElementById('scoreCard').innerHTML = `
+    <div class="text-center py-12">
+      <p class="text-slate-600 mb-4">Results not found</p>
+      <p class="text-sm text-slate-500 mb-3">Run the benchmark to generate results.json:</p>
+      <code class="bg-slate-100 px-3 py-2 rounded block text-xs">cd pint-benchmark && python run_benchmark.py</code>
+      <p class="text-xs text-slate-400 mt-3">Then refresh this page.</p>
+    </div>
+  `;
+}
+
+function renderResults(data) {
+  const score = data.score_percent;
+  document.getElementById('scoreValue').textContent = score.toFixed(1) + '%';
+  document.getElementById('scoreRing').style.setProperty('--rotation', (score * 3.6) + 'deg');
+  document.getElementById('modelName').textContent = data.model;
+
+  const date = new Date(data.date);
+  document.getElementById('resultDate').textContent = date.toLocaleDateString() + ' at ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+  // Category grid
+  const categoryGrid = document.getElementById('categoryGrid');
+  const byCategory = {};
+
+  for (const [key, val] of Object.entries(data.results)) {
+    const cat = val.category;
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(val);
+  }
+
+  for (const [cat, items] of Object.entries(byCategory)) {
+    const avgAccuracy = (items.reduce((sum, item) => sum + item.accuracy, 0) / items.length * 100).toFixed(1);
+    const html = `
+      <div class="metric-card rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p class="text-xs font-semibold uppercase tracking-[.18em] text-slate-500 mb-2">${cat.replace(/_/g, ' ')}</p>
+        <p class="text-3xl font-black text-emerald-600">${avgAccuracy}%</p>
+        <p class="text-xs text-slate-500 mt-1">avg accuracy</p>
+      </div>
+    `;
+    categoryGrid.innerHTML += html;
+  }
+
+  // Table
+  const table = document.getElementById('resultsTable');
+  table.innerHTML = '';
+  for (const [key, val] of Object.entries(data.results)) {
+    const acc = (val.accuracy * 100).toFixed(1);
+    const row = document.createElement('tr');
+    row.className = 'hover:bg-slate-50';
+    row.innerHTML = `
+      <td class="px-6 py-4 font-medium text-slate-900">${val.category}</td>
+      <td class="px-6 py-4 text-slate-600">${val.label ? '✓ Injection' : '✗ Benign'}</td>
+      <td class="px-6 py-4 text-right text-emerald-600 font-semibold">${acc}%</td>
+      <td class="px-6 py-4 text-right text-slate-600">${val.correct}</td>
+      <td class="px-6 py-4 text-right text-slate-600">${val.total}</td>
+    `;
+    table.appendChild(row);
+  }
+}
+
+loadResults();
+</script>
+
+</body>
+</html>

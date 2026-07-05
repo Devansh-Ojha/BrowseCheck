@@ -58,6 +58,15 @@ Open **http://localhost:8000** and run the two-outcome demo: **Run naive agent**
 
 No keys? Exercise the full pipeline + dashboard with scripted events: `curl -X POST http://localhost:8000/run/synthetic`, or run `python verify.py` (L0) for the deterministic hooks.
 
+### Docker
+
+```bash
+cp .env.example .env   # fill in keys
+docker compose up --build
+```
+
+Open **http://localhost:8000**. The image installs Chromium + its OS deps via Playwright, so no local Python/browser setup is needed.
+
 ## Environment variables
 
 ```bash

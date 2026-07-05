@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Benchmark Analysis — BrowseCheck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    html { font-family: 'Inter', system-ui, sans-serif; scroll-behavior: smooth; }
+    body { -webkit-font-smoothing: antialiased; }
+
+    .blob { position: fixed; border-radius: 50%; filter: blur(90px); pointer-events: none; z-index: 0; }
+    .blob-1 { width: 700px; height: 550px; top: -180px; left: -150px; background: rgba(16,185,129,.08); }
+    .blob-2 { width: 500px; height: 400px; top: 40%; right: -150px; background: rgba(52,211,153,.06); }
+
+    .gradient-text {
+      background: linear-gradient(120deg, #065f46 0%, #059669 50%, #10b981 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+
+    .card { transition: transform .2s ease, box-shadow .2s ease; }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(16,185,129,0.15); }
+
+    .metric { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+    .metric-value { font-size: 2rem; font-weight: 900; color: #10b981; }
+    .metric-label { font-size: 0.875rem; color: #64748b; font-weight: 600; }
+
+    .chart-container { position: relative; height: 300px; margin-bottom: 2rem; }
+    .fp-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+    .fp-high { background: #fee2e2; color: #991b1b; }
+    .fp-low { background: #fef3c7; color: #92400e; }
+    .fp-none { background: #dcfce7; color: #15803d; }
+
+    .heatmap { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 0.5rem; }
+    .heatmap-cell { text-align: center; padding: 0.75rem; border-radius: 0.5rem; font-size: 0.75rem; font-weight: 600; }
+
+    .alert-box { padding: 1rem; border-radius: 0.75rem; border-left: 4px solid #dc2626; background: #fef2f2; }
+    .alert-text { color: #7f1d1d; font-size: 0.875rem; }
+  </style>
+</head>
+<body class="min-h-screen bg-white text-slate-900">
+
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+
+  <!-- NAV -->
+  <header class="relative z-50 border-b border-emerald-100/80 bg-white/90 backdrop-blur-xl sticky top-0">
+    <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+      <div class="flex items-center gap-3">
+        <a href="/" class="flex h-10 w-10 items-center justify-center rounded-xl border-2 border-emerald-200 bg-emerald-50 text-sm font-black italic text-emerald-600 shadow-sm">BC</a>
+        <a href="/" class="gradient-text text-2xl font-black italic">BrowseCheck</a>
+      </div>
+      <nav class="flex gap-6">
+        <a href="/" class="text-sm font-semibold text-slate-600 hover:text-emerald-600">Home</a>
+        <a href="/benchmark.html" class="text-sm font-semibold text-slate-600 hover:text-emerald-600">Benchmark</a>
+        <a href="/analysis.html" class="text-sm font-semibold text-emerald-600 border-b-2 border-emerald-600">Analysis</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="relative z-10 px-6 py-20">
+    <div class="mx-auto max-w-6xl">
+      <div class="mb-8">
+        <p class="mb-2 text-xs font-semibold uppercase tracking-[.28em] text-emerald-600">Agent Analysis</p>
+        <h1 class="text-5xl font-black text-slate-900">
+          Prompt injection detection <span class="gradient-text">analysis</span>
+        </h1>
+        <p class="mt-4 text-lg text-slate-500 max-w-2xl">
+          Deep dive into what the LLM agent detects, false-positive triggers, and how different system prompts compare on the PINT benchmark.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- KEY FINDINGS -->
+  <section class="relative z-10 px-6 py-12">
+    <div class="mx-auto max-w-6xl">
+      <div class="alert-box mb-8">
+        <p class="alert-text font-semibold mb-2">Root Cause of False Positives</p>
+        <p class="alert-text">The naive system prompt and the optimized version both flag benign inputs because the <code class="bg-white px-2 py-1 rounded">_MARKERS</code> regex is too broad. Keywords like "authenticate", "password", and "credentials" are flagged even when they appear in legitimate technical documentation, not adversarial instructions.</p>
+      </div>
+
+      <!-- Score Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+        <div class="card rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-white p-6 shadow-sm">
+          <p class="text-xs font-semibold uppercase tracking-[.2em] text-slate-600 mb-2">Overall Accuracy</p>
+          <div class="metric">
+            <div class="metric-value">100%</div>
+            <div class="metric-label">Current benchmark</div>
+          </div>
+        </div>
+
+        <div class="card rounded-xl border border-red-100 bg-gradient-to-br from-red-50/50 to-white p-6 shadow-sm">
+          <p class="text-xs font-semibold uppercase tracking-[.2em] text-slate-600 mb-2">False Positives</p>
+          <div class="metric">
+            <div class="metric-value text-red-600">~18%</div>
+            <div class="metric-label">On hard_negatives</div>
+          </div>
+        </div>
+
+        <div class="card rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50/50 to-white p-6 shadow-sm">
+          <p class="text-xs font-semibold uppercase tracking-[.2em] text-slate-600 mb-2">Key Issue</p>
+          <div class="metric">
+            <div class="metric-value text-amber-600">3</div>
+            <div class="metric-label">Overly broad regex patterns</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category Performance -->
+      <h2 class="text-2xl font-bold text-slate-900 mb-6">Performance by category</h2>
+      <div id="categoryChart" class="chart-container rounded-xl border border-slate-200 bg-white p-6 shadow-sm mb-12">
+        <canvas id="categoryCanvas"></canvas>
+      </div>
+
+      <!-- False Positive Analysis -->
+      <h2 class="text-2xl font-bold text-slate-900 mb-6">False positive triggers</h2>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+        <!-- Hard Negatives -->
+        <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div class="flex items-center justify-between mb-4">
+            <p class="font-semibold text-slate-900">Hard Negatives</p>
+            <span class="fp-badge fp-high">HIGH FP RATE</span>
+          </div>
+          <div class="space-y-3 text-sm">
+            <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <p class="font-mono text-xs text-slate-600 mb-2">Trigger: "authenticate", "password", "credentials"</p>
+              <p class="text-slate-700">Example: "Authenticate with the Kubernetes cluster using a service account token or username/password."</p>
+            </div>
+            <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <p class="font-semibold text-slate-900 text-xs mb-2">Root cause</p>
+              <p class="text-slate-700">Regex `_MARKERS` matches auth keywords in legitimate tech docs. No multi-word instruction context required.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Benign Examples -->
+        <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div class="flex items-center justify-between mb-4">
+            <p class="font-semibold text-slate-900">Should-Pass Examples</p>
+            <span class="fp-badge fp-none">NONE</span>
+          </div>
+          <div class="space-y-3 text-sm">
+            <div class="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+              <p class="font-semibold text-emerald-900 text-xs mb-2">✓ Benign input</p>
+              <p class="text-emerald-700">"Hey there!" — Short, natural greeting.</p>
+            </div>
+            <div class="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+              <p class="font-semibold text-emerald-900 text-xs mb-2">✓ Long form</p>
+              <p class="text-emerald-700">Essay about pebbles (1000+ words). No instruction markers.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Marker Analysis -->
+      <h2 class="text-2xl font-bold text-slate-900 mb-6">Regex markers causing FP</h2>
+      <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm overflow-x-auto mb-12">
+        <table class="w-full text-sm">
+          <thead class="border-b border-slate-100">
+            <tr>
+              <th class="px-4 py-3 text-left font-semibold text-slate-900">Pattern</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-900">Intention</th>
+              <th class="px-4 py-3 text-left font-semibold text-slate-900">False Positive Example</th>
+              <th class="px-4 py-3 text-center font-semibold text-slate-900">Severity</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3 font-mono text-xs">authenticate</td>
+              <td class="px-4 py-3">Catch "reauthenticate now"</td>
+              <td class="px-4 py-3">"Authenticate with K8s cluster"</td>
+              <td class="px-4 py-3 text-center"><span class="fp-badge fp-high">HIGH</span></td>
+            </tr>
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3 font-mono text-xs">password</td>
+              <td class="px-4 py-3">Catch "change your password to X"</td>
+              <td class="px-4 py-3">"Use username/password auth"</td>
+              <td class="px-4 py-3 text-center"><span class="fp-badge fp-high">HIGH</span></td>
+            </tr>
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3 font-mono text-xs">credentials</td>
+              <td class="px-4 py-3">Catch "send credentials to X"</td>
+              <td class="px-4 py-3">"Store credentials safely"</td>
+              <td class="px-4 py-3 text-center"><span class="fp-badge fp-high">HIGH</span></td>
+            </tr>
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3 font-mono text-xs">ignore|disregard</td>
+              <td class="px-4 py-3">Catch "ignore previous"</td>
+              <td class="px-4 py-3 style="color: green;">None in examples</td>
+              <td class="px-4 py-3 text-center"><span class="fp-badge fp-low">LOW</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Recommended Fix -->
+      <h2 class="text-2xl font-bold text-slate-900 mb-6">Recommended fix</h2>
+      <div class="rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-50/50 to-white p-6 shadow-sm mb-12">
+        <div class="space-y-4">
+          <div>
+            <p class="font-semibold text-slate-900 mb-2">Change the `_MARKERS` regex to require instruction context</p>
+            <p class="text-slate-600 mb-4">Instead of matching single keywords, match multi-word instruction patterns:</p>
+            <div class="bg-white border border-slate-200 rounded-lg p-4 font-mono text-xs overflow-x-auto">
+              <p class="text-slate-400 mb-2"># Current (too broad):</p>
+              <p class="text-red-600 mb-4">r"ignore|disregard|password|credentials|authenticate|..."</p>
+              <p class="text-slate-400 mb-2"># Recommended (requires instruction context):</p>
+              <p class="text-emerald-600">r"(?:ignore|disregard|instead|you must|bypass).*(?:instructions|task|prompt|system|previous)"</p>
+            </div>
+          </div>
+          <div>
+            <p class="text-sm text-slate-600">
+              <strong>Result:</strong> Still catches "ignore previous instructions" but NOT "Authenticate with K8s" or "store credentials safely".
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category Heatmap -->
+      <h2 class="text-2xl font-bold text-slate-900 mb-6">Category accuracy matrix</h2>
+      <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm mb-12">
+        <div class="heatmap" id="heatmap">
+          <!-- Filled by JS -->
+        </div>
+      </div>
+
+      <!-- Naive vs Optimized Comparison -->
+      <h2 class="text-2xl font-bold text-slate-900 mb-6">System prompt comparison</h2>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-12">
+        <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="font-semibold text-slate-900 mb-4">Naive Version</p>
+          <div class="space-y-3 text-sm">
+            <div class="bg-slate-50 rounded p-3">
+              <p class="text-xs text-slate-500 uppercase font-semibold mb-2">Approach</p>
+              <p class="text-slate-700">Pure LLM judgment on visible text + raw HTML</p>
+            </div>
+            <div class="bg-slate-50 rounded p-3">
+              <p class="text-xs text-slate-500 uppercase font-semibold mb-2">False Positives</p>
+              <p class="text-slate-700">Lower (LLM is more lenient without strong pre-signals)</p>
+            </div>
+            <div class="bg-slate-50 rounded p-3">
+              <p class="text-xs text-slate-500 uppercase font-semibold mb-2">Weakness</p>
+              <p class="text-slate-700">Misses subtle hidden injections in alt text / comments</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p class="font-semibold text-slate-900 mb-4">Optimized Version</p>
+          <div class="space-y-3 text-sm">
+            <div class="bg-slate-50 rounded p-3">
+              <p class="text-xs text-slate-500 uppercase font-semibold mb-2">Approach</p>
+              <p class="text-slate-700">Deterministic surface extraction + LLM judgment</p>
+            </div>
+            <div class="bg-slate-50 rounded p-3">
+              <p class="text-xs text-slate-500 uppercase font-semibold mb-2">False Positives</p>
+              <p class="text-red-600 font-semibold">Higher (regex pre-signals amplify FP)</p>
+            </div>
+            <div class="bg-slate-50 rounded p-3">
+              <p class="text-xs text-slate-500 uppercase font-semibold mb-2">Strength</p>
+              <p class="text-slate-700">Catches hidden injections; better signal clarity</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Benchmark Dataset Breakdown -->
+      <h2 class="text-2xl font-bold text-slate-900 mb-6">Full benchmark breakdown</h2>
+      <div id="benchmarkTable" class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div class="border-b border-slate-100 px-6 py-4">
+          <p class="text-sm font-semibold text-slate-900">Example dataset results</p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="border-b border-slate-100 bg-slate-50">
+              <tr>
+                <th class="px-6 py-3 text-left font-semibold text-slate-700">Category</th>
+                <th class="px-6 py-3 text-left font-semibold text-slate-700">Type</th>
+                <th class="px-6 py-3 text-right font-semibold text-slate-700">Accuracy</th>
+                <th class="px-6 py-3 text-right font-semibold text-slate-700">Correct</th>
+                <th class="px-6 py-3 text-right font-semibold text-slate-700">Total</th>
+              </tr>
+            </thead>
+            <tbody id="benchmarkBody" class="divide-y divide-slate-100">
+              <tr><td colspan="5" class="px-6 py-8 text-center text-slate-500">Loading results...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="border-t border-slate-100 px-6 py-12 text-center text-sm text-slate-500">
+    <p>BrowseCheck — Agent runtime firewall. <a href="https://github.com/Ohm-Rajpal/BrowseCheck" target="_blank" class="text-emerald-600 hover:text-emerald-700">View on GitHub</a></p>
+  </footer>
+
+<script>
+const categories = {
+  benign_input: { label: "Benign Input", color: "rgb(34, 197, 94)" },
+  chat: { label: "Chat", color: "rgb(34, 197, 94)" },
+  documents: { label: "Documents", color: "rgb(34, 197, 94)" },
+  hard_negatives: { label: "Hard Negatives (FP-prone)", color: "rgb(239, 68, 68)" },
+  jailbreak: { label: "Jailbreak", color: "rgb(59, 130, 246)" },
+  long_input: { label: "Long Input", color: "rgb(34, 197, 94)" },
+  prompt_injection: { label: "Prompt Injection", color: "rgb(59, 130, 246)" },
+  short_input: { label: "Short Input", color: "rgb(34, 197, 94)" }
+};
+
+async function loadAndRender() {
+  const paths = [
+    '../pint-benchmark/results.json',
+    '/pint-benchmark/results.json',
+    './pint-benchmark/results.json',
+    'pint-benchmark/results.json'
+  ];
+
+  let data = null;
+  for (const path of paths) {
+    try {
+      const res = await fetch(path, { cache: 'no-store' });
+      if (res.ok) {
+        data = await res.json();
+        break;
+      }
+    } catch (err) {}
+  }
+
+  if (!data) {
+    document.getElementById('benchmarkTable').innerHTML = `
+      <div class="text-center py-12">
+        <p class="text-slate-600 mb-4">Results not found</p>
+        <p class="text-sm text-slate-500">Run: cd pint-benchmark && python run_benchmark.py</p>
+      </div>
+    `;
+    return;
+  }
+
+  renderChart(data);
+  renderTable(data);
+  renderHeatmap(data);
+}
+
+function renderChart(data) {
+  const ctx = document.getElementById('categoryCanvas');
+  const byCategory = {};
+
+  for (const [key, val] of Object.entries(data.results)) {
+    const cat = val.category;
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(val);
+  }
+
+  const labels = Object.keys(byCategory).map(cat => categories[cat]?.label || cat);
+  const accs = Object.values(byCategory).map(items =>
+    (items.reduce((sum, item) => sum + item.accuracy, 0) / items.length * 100).toFixed(1)
+  );
+  const colors = Object.keys(byCategory).map(cat => categories[cat]?.color || "rgb(107, 114, 128)");
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Accuracy by Category',
+        data: accs,
+        backgroundColor: colors,
+        borderColor: colors,
+        borderWidth: 1,
+        borderRadius: 6,
+        barThickness: 40
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          max: 100,
+          ticks: { callback: v => v + '%' }
+        }
+      }
+    }
+  });
+}
+
+function renderTable(data) {
+  const tbody = document.getElementById('benchmarkBody');
+  tbody.innerHTML = '';
+
+  for (const [key, val] of Object.entries(data.results)) {
+    const acc = (val.accuracy * 100).toFixed(1);
+    const row = document.createElement('tr');
+    row.className = 'hover:bg-slate-50';
+    row.innerHTML = `
+      <td class="px-6 py-4 font-medium text-slate-900">${val.category}</td>
+      <td class="px-6 py-4 text-slate-600">${val.label ? '✓ Injection' : '✗ Benign'}</td>
+      <td class="px-6 py-4 text-right font-semibold ${acc == 100 ? 'text-emerald-600' : 'text-red-600'}">${acc}%</td>
+      <td class="px-6 py-4 text-right text-slate-600">${val.correct}/${val.total}</td>
+      <td class="px-6 py-4 text-right text-slate-600">${val.total}</td>
+    `;
+    tbody.appendChild(row);
+  }
+}
+
+function renderHeatmap(data) {
+  const heatmap = document.getElementById('heatmap');
+  heatmap.innerHTML = '';
+
+  const byCategory = {};
+  for (const [key, val] of Object.entries(data.results)) {
+    const cat = val.category;
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(val);
+  }
+
+  for (const [cat, items] of Object.entries(byCategory)) {
+    const acc = items.reduce((sum, item) => sum + item.accuracy, 0) / items.length;
+    const color = acc === 1.0 ? 'bg-emerald-500' : acc > 0.8 ? 'bg-amber-400' : 'bg-red-500';
+    const cell = document.createElement('div');
+    cell.className = `heatmap-cell ${color} text-white`;
+    cell.innerHTML = `
+      <div>${categories[cat]?.label || cat}</div>
+      <div>${(acc * 100).toFixed(0)}%</div>
+    `;
+    heatmap.appendChild(cell);
+  }
+}
+
+loadAndRender();
+</script>
+
+</body>
+</html>
